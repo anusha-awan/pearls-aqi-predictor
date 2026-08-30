@@ -23,9 +23,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests pandas python-dotenv hopsworks==5.0.6
 
-      - name: Run feature pipeline
+      - name: Run AQI data collection
         env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
-          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
         run: |
           python save_data.py
+
+      - name: Run feature engineering
+        run: |
+          python feature_engineering.py
+
+      - name: Upload features to Hopsworks
+        env:
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+        run: |
+          python upload_features.py
