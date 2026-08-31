@@ -1,31 +1,41 @@
-import os
-import joblib
-import hopsworks
 import pandas as pd
+import joblib
 
-from dotenv import load_dotenv
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-
-
-# =========================================================
-# LOAD ENVIRONMENT
-# =========================================================
-
-load_dotenv()
+from sklearn.metrics import (
+    mean_squared_error,
+    mean_absolute_error,
+    r2_score
+)
 
 
-# =========================================================
-# CONSTANTS
-# =========================================================
+# ==========================================================
+# LOAD DATA
+# ==========================================================
 
-FEATURE_GROUP_NAME = "aqi_features"
-FEATURE_GROUP_VERSION = 1
+print("=" * 60)
+print("AQI MODEL EVALUATION")
+print("=" * 60)
 
-MODEL_NAME = "aqi_random_forest"
-MODEL_VERSION = 2
+print("\nLoading training data...")
+
+df = pd.read_csv("training_data.csv")
+
+df["datetime"] = pd.to_datetime(
+    df["datetime"]
+)
+
+df = (
+    df
+    .sort_values("datetime")
+    .reset_index(drop=True)
+)
 
 
-MODEL_FEATURES = [
+# ==========================================================
+# FEATURES
+# ==========================================================
+
+features = [
     "co",
     "no",
     "no2",
@@ -55,164 +65,127 @@ MODEL_FEATURES = [
 ]
 
 
-# =========================================================
-# CONNECT TO HOPSWORKS
-# =========================================================
-
-print("=" * 60)
-print("AQI MODEL EVALUATION")
-print("=" * 60)
-
-api_key = os.getenv("HOPSWORKS_API_KEY")
-
-if not api_key:
-    raise ValueError("HOPSWORKS_API_KEY not found.")
-
-print("\nConnecting to Hopsworks...")
-
-project = hopsworks.login(
-    api_key_value=api_key
-)
-
-fs = project.get_feature_store()
-
-print("Connected successfully!")
-
-
-# =========================================================
-# LOAD FEATURE GROUP
-# =========================================================
-
-print("\nLoading feature data...")
-
-fg = fs.get_feature_group(
-    name=FEATURE_GROUP_NAME,
-    version=FEATURE_GROUP_VERSION
-)
-
-df = fg.select_all().read()
-
-df["datetime"] = pd.to_datetime(
-    df["datetime"]
-)
-
-df = (
-    df
-    .sort_values("datetime")
-    .reset_index(drop=True)
-)
-
-print(f"Rows loaded: {len(df)}")
-
-
-# =========================================================
-# CLEAN DATA
-# =========================================================
+# ==========================================================
+# CLEAN
+# ==========================================================
 
 df = df.dropna(
-    subset=MODEL_FEATURES + ["datetime"]
+    subset=features + ["target_aqi"]
 ).reset_index(drop=True)
 
-print(f"Valid rows: {len(df)}")
 
-
-# =========================================================
-# LOAD MODEL
-# =========================================================
-
-print("\nLoading Random Forest model...")
-
-model_registry = project.get_model_registry()
-
-model = model_registry.get_model(
-    name=MODEL_NAME,
-    version=MODEL_VERSION
+print(
+    "Valid rows:",
+    len(df)
 )
 
-model_dir = model.download()
 
-model_file = None
+# ==========================================================
+# CHRONOLOGICAL 80/20 SPLIT
+# ==========================================================
 
-for root, dirs, files in os.walk(model_dir):
-
-    for file in files:
-
-        if file.endswith(".pkl"):
-
-            model_file = os.path.join(
-                root,
-                file
-            )
-
-            break
-
-    if model_file:
-        break
-
-
-if not model_file:
-
-    raise FileNotFoundError(
-        "No .pkl model file found."
-    )
-
-
-trained_model = joblib.load(
-    model_file
+split_index = int(
+    len(df) * 0.8
 )
 
-print("Model loaded successfully!")
+train_df = df.iloc[:split_index]
+test_df = df.iloc[split_index:]
 
 
-# =========================================================
-# PREPARE DATA
-# =========================================================
-
-X = df[MODEL_FEATURES]
-
-y = df["aqi"]
+X_test = test_df[features]
+y_test = test_df["target_aqi"]
 
 
-# =========================================================
-# MODEL PREDICTIONS
-# =========================================================
+print(
+    "Training rows:",
+    len(train_df)
+)
 
-print("\nGenerating predictions...")
+print(
+    "Testing rows:",
+    len(test_df)
+)
 
-predictions = trained_model.predict(X)
+
+# ==========================================================
+# LOAD LOCAL BEST MODEL
+# ==========================================================
+
+print(
+    "\nLoading local Random Forest model..."
+)
+
+model = joblib.load(
+    "aqi_model.pkl"
+)
+
+print(
+    "Model loaded successfully!"
+)
 
 
-# =========================================================
-# EVALUATION METRICS
-# =========================================================
+# ==========================================================
+# PREDICTIONS
+# ==========================================================
+
+print(
+    "\nGenerating test predictions..."
+)
+
+predictions = model.predict(
+    X_test
+)
+
+
+# ==========================================================
+# METRICS
+# ==========================================================
+
+mae = mean_absolute_error(
+    y_test,
+    predictions
+)
 
 rmse = mean_squared_error(
-    y,
+    y_test,
     predictions
 ) ** 0.5
 
-mae = mean_absolute_error(
-    y,
-    predictions
-)
-
 r2 = r2_score(
-    y,
+    y_test,
     predictions
 )
 
 
-# =========================================================
+# ==========================================================
 # RESULTS
-# =========================================================
+# ==========================================================
 
 print("\n" + "=" * 60)
-print("MODEL EVALUATION RESULTS")
+print("FINAL TEST RESULTS")
 print("=" * 60)
 
-print(f"\nRMSE : {rmse:.4f}")
-print(f"MAE  : {mae:.4f}")
-print(f"R²   : {r2:.4f}")
+print(
+    f"\nMAE  : {mae:.2f} AQI points"
+)
+
+print(
+    f"RMSE : {rmse:.2f} AQI points"
+)
+
+print(
+    f"R²   : {r2:.4f}"
+)
+
+print(
+    "\nActual AQI range in test set:",
+    f"{y_test.min():.0f} - {y_test.max():.0f}"
+)
+
+print(
+    "Predicted AQI range:",
+    f"{predictions.min():.0f} - {predictions.max():.0f}"
+)
 
 print("\n" + "=" * 60)
 print("EVALUATION COMPLETE")
