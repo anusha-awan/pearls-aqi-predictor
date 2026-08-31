@@ -1,3 +1,4 @@
+
 import pandas as pd
 
 
@@ -33,11 +34,12 @@ df["datetime"] = pd.to_datetime(
     utc=True
 )
 
-# Sort chronologically
+# Sort chronologically and remove duplicate timestamps
 df = (
     df.sort_values("datetime")
       .drop_duplicates(
-          subset=["datetime"]
+          subset=["datetime"],
+          keep="last"
       )
       .reset_index(drop=True)
 )
@@ -107,8 +109,8 @@ df["pm10_lag_1"] = (
 # =========================================================
 # ROLLING AQI FEATURES
 #
-# shift(1) ensures that the current AQI is NOT used
-# to calculate its own input features.
+# shift(1) prevents current AQI from being used
+# to calculate its own historical rolling features.
 # =========================================================
 
 previous_aqi = (
@@ -148,14 +150,14 @@ df["aqi_change"] = (
 # =========================================================
 # TARGET
 #
-# Predict the AQI of the NEXT HOUR.
+# The model predicts the AQI of the next hour.
 #
-# Example:
+# For historical/training rows:
 #
-# Current AQI  → 3
-# Next hour AQI → 4
+# current AQI -> next-hour AQI
 #
-# target_aqi = 4
+# The final/latest row naturally has no next-hour
+# observation yet, so its target_aqi remains NaN.
 # =========================================================
 
 df["target_aqi"] = (
@@ -165,11 +167,58 @@ df["target_aqi"] = (
 
 # =========================================================
 # REMOVE ROWS WITHOUT SUFFICIENT HISTORY
+#
+# IMPORTANT:
+# We remove rows missing historical FEATURES,
+# but we DO NOT remove the latest row merely because
+# target_aqi is unavailable.
 # =========================================================
 
+feature_columns = [
+
+    "datetime",
+
+    "aqi",
+
+    "co",
+    "no",
+    "no2",
+    "o3",
+    "so2",
+    "pm2_5",
+    "pm10",
+    "nh3",
+
+    "hour",
+    "day",
+    "month",
+    "day_of_week",
+
+    "aqi_lag_1",
+    "aqi_lag_3",
+    "aqi_lag_6",
+    "aqi_lag_12",
+    "aqi_lag_24",
+    "aqi_lag_48",
+    "aqi_lag_72",
+
+    "pm2_5_lag_1",
+    "pm10_lag_1",
+
+    "aqi_rolling_6",
+    "aqi_rolling_24",
+    "aqi_rolling_72",
+
+    "aqi_change"
+]
+
+
 df = (
-    df.dropna()
-      .reset_index(drop=True)
+    df
+    .dropna(
+        subset=feature_columns
+    )
+    .reset_index(drop=True)
 )
 
 
@@ -242,21 +291,60 @@ if missing_columns:
 
 # =========================================================
 # CHECK MISSING VALUES
+#
+# target_aqi is allowed to be missing ONLY for the
+# latest observation because there is no next-hour
+# actual AQI available yet.
 # =========================================================
 
-total_missing = (
-    df[required_columns]
+feature_missing = (
+    df[feature_columns]
     .isnull()
     .sum()
     .sum()
 )
 
 
-if total_missing > 0:
+if feature_missing > 0:
 
     raise ValueError(
-        f"Dataset still contains "
-        f"{total_missing} missing values."
+        f"Feature dataset contains "
+        f"{feature_missing} missing values."
+    )
+
+
+# Count missing target values
+missing_targets = (
+    df["target_aqi"]
+    .isnull()
+    .sum()
+)
+
+
+# Only the final row may have a missing target
+if missing_targets > 1:
+
+    raise ValueError(
+        "More than one target_aqi value is missing. "
+        "This indicates an unexpected data gap."
+    )
+
+
+# =========================================================
+# VALIDATE DUPLICATES
+# =========================================================
+
+duplicate_datetimes = (
+    df["datetime"]
+    .duplicated()
+    .sum()
+)
+
+
+if duplicate_datetimes > 0:
+
+    raise ValueError(
+        f"Found {duplicate_datetimes} duplicate datetimes."
     )
 
 
@@ -315,13 +403,41 @@ print(
 
 
 print(
-    "\nMissing values:"
+    "\nMissing feature values:"
 )
 
 print(
-    df[required_columns]
+    df[feature_columns]
     .isnull()
     .sum()
+)
+
+
+print(
+    "\nMissing target_aqi values:",
+    missing_targets
+)
+
+
+print(
+    "\nLatest engineered observation:"
+)
+
+print(
+    df.tail(1).to_string(
+        index=False
+    )
+)
+
+
+print(
+    "\nDate range:"
+)
+
+print(
+    df["datetime"].min(),
+    "->",
+    df["datetime"].max()
 )
 
 
@@ -331,6 +447,7 @@ print(
 
 print(
     df["target_aqi"]
+    .dropna()
     .value_counts()
     .sort_index()
 )
@@ -342,3 +459,4 @@ print(
 )
 
 print("=" * 60)
+

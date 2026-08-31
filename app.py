@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import joblib
 import matplotlib.pyplot as plt
+import shap
+
 from datetime import timedelta
 
 
@@ -388,7 +390,55 @@ plt.xticks(
 plt.tight_layout()
 
 st.pyplot(fig)
+# ==========================================================
+# KEY FORECAST OUTPUTS — 24 / 48 / 72 HOURS
+# ==========================================================
 
+st.subheader("📌 Key Forecast Predictions")
+
+# Get the predictions corresponding to +24h, +48h and +72h
+day1_aqi = forecast_df.iloc[23]["predicted_aqi"]
+day2_aqi = forecast_df.iloc[47]["predicted_aqi"]
+day3_aqi = forecast_df.iloc[71]["predicted_aqi"]
+
+day1_time = forecast_df.iloc[23]["datetime"]
+day2_time = forecast_df.iloc[47]["datetime"]
+day3_time = forecast_df.iloc[71]["datetime"]
+
+forecast_col1, forecast_col2, forecast_col3 = st.columns(3)
+
+with forecast_col1:
+
+    st.metric(
+        "Day +1 (24 Hours)",
+        f"{day1_aqi:.1f} AQI"
+    )
+
+    st.caption(
+        day1_time.strftime("%Y-%m-%d %H:%M")
+    )
+
+with forecast_col2:
+
+    st.metric(
+        "Day +2 (48 Hours)",
+        f"{day2_aqi:.1f} AQI"
+    )
+
+    st.caption(
+        day2_time.strftime("%Y-%m-%d %H:%M")
+    )
+
+with forecast_col3:
+
+    st.metric(
+        "Day +3 (72 Hours)",
+        f"{day3_aqi:.1f} AQI"
+    )
+
+    st.caption(
+        day3_time.strftime("%Y-%m-%d %H:%M")
+    )
 
 # ==========================================================
 # DAILY FORECAST
@@ -517,38 +567,92 @@ st.caption(
     "train-test split on actual EPA-style AQI values."
 )
 
-
 # ==========================================================
-# FEATURE IMPORTANCE
+# MODEL EXPLAINABILITY — SHAP
 # ==========================================================
 
 st.divider()
 
-st.header(
-    "🤖 Model Explainability — Feature Importance"
+st.header("🤖 Model Explainability — SHAP")
+
+st.write(
+    "SHAP (SHapley Additive exPlanations) shows how each input "
+    "feature contributes to the model's AQI prediction. "
+    "Larger absolute SHAP values indicate a stronger influence "
+    "on the prediction."
 )
 
-if hasattr(
-    model,
-    "feature_importances_"
-):
 
-    importance_values = (
-        model.feature_importances_
+# ----------------------------------------------------------
+# PREPARE SHAP DATA
+# ----------------------------------------------------------
+
+try:
+
+    # Use only the model input features
+    X_shap = df[MODEL_FEATURES].dropna().copy()
+
+    # Keep the computation lightweight while preserving
+    # a representative sample of the available data.
+    shap_sample_size = min(300, len(X_shap))
+
+    X_shap_sample = (
+        X_shap
+        .sample(
+            n=shap_sample_size,
+            random_state=42
+        )
+        .reset_index(drop=True)
     )
 
-    feature_importance = pd.DataFrame({
+
+    # ------------------------------------------------------
+    # CREATE SHAP EXPLAINER
+    # ------------------------------------------------------
+
+    explainer = shap.TreeExplainer(model)
+
+    shap_values = explainer.shap_values(
+        X_shap_sample
+    )
+
+
+    # ------------------------------------------------------
+    # HANDLE SHAP OUTPUT
+    # ------------------------------------------------------
+
+    if isinstance(shap_values, list):
+
+        shap_values_plot = shap_values[0]
+
+    else:
+
+        shap_values_plot = shap_values
+
+
+    # ------------------------------------------------------
+    # GLOBAL SHAP IMPORTANCE
+    # ------------------------------------------------------
+
+    mean_abs_shap = (
+        abs(shap_values_plot)
+        .mean(axis=0)
+    )
+
+
+    shap_importance = pd.DataFrame({
 
         "Feature": MODEL_FEATURES,
 
-        "Importance": importance_values
+        "Mean |SHAP Value|": mean_abs_shap
 
     })
 
-    feature_importance = (
-        feature_importance
+
+    shap_importance = (
+        shap_importance
         .sort_values(
-            "Importance",
+            "Mean |SHAP Value|",
             ascending=False
         )
         .reset_index(
@@ -556,35 +660,204 @@ if hasattr(
         )
     )
 
+
+    # ------------------------------------------------------
+    # DISPLAY TOP FEATURES
+    # ------------------------------------------------------
+
+    st.subheader(
+        "📊 Global Feature Impact"
+    )
+
+    st.caption(
+        "Average absolute SHAP value across a representative "
+        f"sample of {shap_sample_size} observations."
+    )
+
+
     st.dataframe(
-        feature_importance,
+        shap_importance,
         use_container_width=True,
         hide_index=True
     )
 
-    fig2, ax2 = plt.subplots(
+
+    # ------------------------------------------------------
+    # SHAP BAR CHART
+    # ------------------------------------------------------
+
+    fig_shap, ax_shap = plt.subplots(
         figsize=(10, 8)
     )
 
-    ax2.barh(
-        feature_importance["Feature"],
-        feature_importance["Importance"]
+
+    top_shap = (
+        shap_importance
+        .head(15)
+        .sort_values(
+            "Mean |SHAP Value|",
+            ascending=True
+        )
     )
 
-    ax2.set_title(
-        "Random Forest Feature Importance"
+
+    ax_shap.barh(
+        top_shap["Feature"],
+        top_shap["Mean |SHAP Value|"]
     )
 
-    ax2.set_xlabel(
-        "Importance"
+
+    ax_shap.set_title(
+        "Top 15 Features by Mean Absolute SHAP Value"
     )
 
-    ax2.invert_yaxis()
+    ax_shap.set_xlabel(
+        "Mean Absolute SHAP Value"
+    )
 
     plt.tight_layout()
 
-    st.pyplot(fig2)
+    st.pyplot(
+        fig_shap
+    )
 
+
+    # ------------------------------------------------------
+    # LOCAL EXPLANATION
+    # ------------------------------------------------------
+
+    st.subheader(
+        "🔍 Individual Prediction Explanation"
+    )
+
+    st.write(
+        "The chart below explains one representative AQI "
+        "prediction and shows which features pushed the "
+        "prediction higher or lower."
+    )
+
+
+    explanation_index = 0
+
+    explanation_features = (
+        X_shap_sample
+        .iloc[
+            explanation_index
+        ]
+    )
+
+
+    explanation_values = (
+        shap_values_plot[
+            explanation_index
+        ]
+    )
+
+
+    local_explanation = pd.DataFrame({
+
+        "Feature": MODEL_FEATURES,
+
+        "SHAP Value": explanation_values,
+
+        "Feature Value": (
+            explanation_features.values
+        )
+
+    })
+
+
+    local_explanation[
+        "Absolute SHAP"
+    ] = abs(
+        local_explanation[
+            "SHAP Value"
+        ]
+    )
+
+
+    local_explanation = (
+        local_explanation
+        .sort_values(
+            "Absolute SHAP",
+            ascending=False
+        )
+        .head(10)
+        .sort_values(
+            "SHAP Value"
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+    fig_local, ax_local = plt.subplots(
+        figsize=(10, 6)
+    )
+
+
+    ax_local.barh(
+        local_explanation["Feature"],
+        local_explanation["SHAP Value"]
+    )
+
+
+    ax_local.axvline(
+        0,
+        linewidth=1
+    )
+
+
+    ax_local.set_title(
+        "SHAP Explanation for One AQI Prediction"
+    )
+
+    ax_local.set_xlabel(
+        "SHAP Value"
+    )
+
+    ax_local.set_ylabel(
+        "Feature"
+    )
+
+    plt.tight_layout()
+
+    st.pyplot(
+        fig_local
+    )
+
+
+    # ------------------------------------------------------
+    # INTERPRETATION
+    # ------------------------------------------------------
+
+    strongest_feature = (
+        shap_importance.iloc[0]["Feature"]
+    )
+
+    strongest_value = (
+        shap_importance.iloc[0]["Mean |SHAP Value|"]
+    )
+
+
+    st.info(
+        f"💡 The feature with the strongest overall "
+        f"SHAP influence in the sampled data is "
+        f"**{strongest_feature}**, with a mean absolute "
+        f"SHAP value of **{strongest_value:.4f}**."
+    )
+
+
+except Exception as e:
+
+    st.warning(
+        "SHAP explainability could not be generated."
+    )
+
+    st.code(
+        str(e)
+    )
 
 # ==========================================================
 # MODEL INFORMATION

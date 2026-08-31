@@ -1,15 +1,15 @@
-import pandas as pd
 import joblib
+import pandas as pd
 
 from sklearn.metrics import (
-    mean_squared_error,
     mean_absolute_error,
+    mean_squared_error,
     r2_score
 )
 
 
 # ==========================================================
-# LOAD DATA
+# LOAD TRAINING DATA
 # ==========================================================
 
 print("=" * 60)
@@ -35,7 +35,7 @@ df = (
 # FEATURES
 # ==========================================================
 
-features = [
+MODEL_FEATURES = [
     "co",
     "no",
     "no2",
@@ -66,94 +66,117 @@ features = [
 
 
 # ==========================================================
-# CLEAN
+# CLEAN DATA
 # ==========================================================
 
 df = df.dropna(
-    subset=features + ["target_aqi"]
+    subset=MODEL_FEATURES + ["target_aqi"]
 ).reset_index(drop=True)
 
 
-print(
-    "Valid rows:",
-    len(df)
-)
+print("Valid rows:", len(df))
 
 
 # ==========================================================
 # CHRONOLOGICAL 80/20 SPLIT
 # ==========================================================
 
-split_index = int(
-    len(df) * 0.8
-)
+split_index = int(len(df) * 0.8)
 
 train_df = df.iloc[:split_index]
 test_df = df.iloc[split_index:]
 
 
-X_test = test_df[features]
-y_test = test_df["target_aqi"]
-
-
-print(
-    "Training rows:",
-    len(train_df)
-)
-
-print(
-    "Testing rows:",
-    len(test_df)
-)
+print("Training rows:", len(train_df))
+print("Testing rows:", len(test_df))
 
 
 # ==========================================================
-# LOAD LOCAL BEST MODEL
+# LOAD LOCAL RANDOM FOREST MODEL
 # ==========================================================
 
-print(
-    "\nLoading local Random Forest model..."
-)
+print("\nLoading local Random Forest model...")
 
 model = joblib.load(
     "aqi_model.pkl"
 )
 
-print(
-    "Model loaded successfully!"
-)
+print("Model loaded successfully!")
 
 
 # ==========================================================
-# PREDICTIONS
+# RANDOM FOREST PREDICTIONS
 # ==========================================================
 
-print(
-    "\nGenerating test predictions..."
-)
+print("\nGenerating Random Forest test predictions...")
 
-predictions = model.predict(
+X_test = test_df[MODEL_FEATURES]
+
+y_test = test_df["target_aqi"]
+
+rf_predictions = model.predict(
     X_test
 )
 
 
 # ==========================================================
-# METRICS
+# PERSISTENCE BASELINE
 # ==========================================================
 
-mae = mean_absolute_error(
-    y_test,
-    predictions
+print("Generating persistence baseline predictions...")
+
+# Persistence assumes the next-hour AQI
+# will be equal to the current AQI.
+
+persistence_predictions = (
+    test_df["aqi"]
+    .values
 )
 
-rmse = mean_squared_error(
-    y_test,
-    predictions
-) ** 0.5
 
-r2 = r2_score(
+# ==========================================================
+# RANDOM FOREST METRICS
+# ==========================================================
+
+rf_mae = mean_absolute_error(
     y_test,
-    predictions
+    rf_predictions
+)
+
+rf_rmse = (
+    mean_squared_error(
+        y_test,
+        rf_predictions
+    )
+    ** 0.5
+)
+
+rf_r2 = r2_score(
+    y_test,
+    rf_predictions
+)
+
+
+# ==========================================================
+# PERSISTENCE METRICS
+# ==========================================================
+
+p_mae = mean_absolute_error(
+    y_test,
+    persistence_predictions
+)
+
+p_rmse = (
+    mean_squared_error(
+        y_test,
+        persistence_predictions
+    )
+    ** 0.5
+)
+
+p_r2 = r2_score(
+    y_test,
+    persistence_predictions
 )
 
 
@@ -162,30 +185,59 @@ r2 = r2_score(
 # ==========================================================
 
 print("\n" + "=" * 60)
-print("FINAL TEST RESULTS")
+print("FINAL MODEL COMPARISON")
 print("=" * 60)
 
+print("\nRandom Forest:")
 print(
-    f"\nMAE  : {mae:.2f} AQI points"
+    f"MAE  : {rf_mae:.2f} AQI points"
+)
+print(
+    f"RMSE : {rf_rmse:.2f} AQI points"
+)
+print(
+    f"R²   : {rf_r2:.4f}"
 )
 
+
+print("\nPersistence Baseline:")
 print(
-    f"RMSE : {rmse:.2f} AQI points"
+    f"MAE  : {p_mae:.2f} AQI points"
+)
+print(
+    f"RMSE : {p_rmse:.2f} AQI points"
+)
+print(
+    f"R²   : {p_r2:.4f}"
 )
 
-print(
-    f"R²   : {r2:.4f}"
-)
 
-print(
-    "\nActual AQI range in test set:",
-    f"{y_test.min():.0f} - {y_test.max():.0f}"
-)
+# ==========================================================
+# COMPARISON
+# ==========================================================
 
-print(
-    "Predicted AQI range:",
-    f"{predictions.min():.0f} - {predictions.max():.0f}"
-)
+print("\n" + "=" * 60)
+print("COMPARISON")
+print("=" * 60)
+
+
+if rf_mae < p_mae:
+    print("✅ Random Forest beats persistence on MAE.")
+else:
+    print("⚠️ Random Forest does not beat persistence on MAE.")
+
+
+if rf_rmse < p_rmse:
+    print("✅ Random Forest beats persistence on RMSE.")
+else:
+    print("⚠️ Random Forest does not beat persistence on RMSE.")
+
+
+if rf_r2 > p_r2:
+    print("✅ Random Forest beats persistence on R².")
+else:
+    print("⚠️ Random Forest does not beat persistence on R².")
+
 
 print("\n" + "=" * 60)
 print("EVALUATION COMPLETE")

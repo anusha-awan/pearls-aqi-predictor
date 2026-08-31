@@ -1,6 +1,9 @@
+import os
 import pandas as pd
 import joblib
+import hopsworks
 
+from dotenv import load_dotenv
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -9,16 +12,128 @@ from sklearn.pipeline import Pipeline
 
 
 # ==========================================================
-# LOAD TRAINING DATA
+# CONFIGURATION
 # ==========================================================
 
-print("Loading training data...")
+FEATURE_GROUP_NAME = "aqi_features_v2"
+FEATURE_GROUP_VERSION = 1
 
-df = pd.read_csv("training_data.csv")
+LOCAL_DATA_FILE = "features.csv"
 
-df["datetime"] = pd.to_datetime(df["datetime"])
 
-print("Total rows:", len(df))
+# ==========================================================
+# LOAD ENVIRONMENT
+# ==========================================================
+
+load_dotenv()
+
+api_key = os.getenv("HOPSWORKS_API_KEY")
+
+
+# ==========================================================
+# LOAD DATA
+# ==========================================================
+
+print("=" * 60)
+print("AQI TRAINING PIPELINE")
+print("=" * 60)
+
+df = None
+
+
+# ==========================================================
+# TRY HOPSWORKS FEATURE STORE
+# ==========================================================
+
+if api_key:
+
+    try:
+
+        print("\nConnecting to Hopsworks...")
+
+        project = hopsworks.login(
+            api_key_value=api_key
+        )
+
+        print("Hopsworks login successful.")
+
+        fs = project.get_feature_store()
+
+        print("Feature Store connected.")
+
+        print("\nAttempting to load features from Hopsworks...")
+
+        feature_group = fs.get_feature_group(
+            name=FEATURE_GROUP_NAME,
+            version=FEATURE_GROUP_VERSION
+        )
+
+        df = (
+            feature_group
+            .select_all()
+            .read()
+        )
+
+        print(
+            "Successfully loaded",
+            len(df),
+            "rows from Hopsworks Feature Store."
+        )
+
+    except Exception as e:
+
+        print("\nHopsworks Feature Store read failed.")
+
+        print(
+            "Reason:",
+            str(e)
+        )
+
+        print(
+            "\nUsing local features.csv fallback."
+        )
+
+
+# ==========================================================
+# LOCAL FALLBACK
+# ==========================================================
+
+if df is None:
+
+    if not os.path.exists(LOCAL_DATA_FILE):
+
+        raise FileNotFoundError(
+            "features.csv not found."
+        )
+
+    df = pd.read_csv(
+        LOCAL_DATA_FILE
+    )
+
+    print(
+        "Loaded local engineered dataset:",
+        len(df),
+        "rows."
+    )
+
+
+# ==========================================================
+# DATETIME
+# ==========================================================
+
+df["datetime"] = pd.to_datetime(
+    df["datetime"],
+    utc=True
+)
+
+df = (
+    df
+    .sort_values("datetime")
+    .drop_duplicates(
+        subset=["datetime"]
+    )
+    .reset_index(drop=True)
+)
 
 
 # ==========================================================
@@ -26,6 +141,7 @@ print("Total rows:", len(df))
 # ==========================================================
 
 features = [
+
     "co",
     "no",
     "no2",
@@ -34,11 +150,14 @@ features = [
     "pm2_5",
     "pm10",
     "nh3",
+
     "hour",
     "day",
     "month",
     "day_of_week",
+
     "aqi",
+
     "aqi_lag_1",
     "aqi_lag_3",
     "aqi_lag_6",
@@ -46,24 +165,42 @@ features = [
     "aqi_lag_24",
     "aqi_lag_48",
     "aqi_lag_72",
+
     "pm2_5_lag_1",
     "pm10_lag_1",
+
     "aqi_rolling_6",
     "aqi_rolling_24",
     "aqi_rolling_72",
+
     "aqi_change"
 ]
 
 
 # ==========================================================
-# REMOVE MISSING VALUES
+# CLEAN DATA
 # ==========================================================
 
-df = df.dropna(
-    subset=features + ["target_aqi"]
-).reset_index(drop=True)
+df = (
+    df
+    .dropna(
+        subset=features + ["target_aqi"]
+    )
+    .reset_index(drop=True)
+)
 
-print("Rows after removing missing values:", len(df))
+
+print("\nTraining dataset ready.")
+
+print(
+    "Rows:",
+    len(df)
+)
+
+print(
+    "Features:",
+    len(features)
+)
 
 
 # ==========================================================
@@ -79,7 +216,9 @@ y = df["target_aqi"]
 # CHRONOLOGICAL TRAIN / TEST SPLIT
 # ==========================================================
 
-split_index = int(len(df) * 0.8)
+split_index = int(
+    len(df) * 0.8
+)
 
 X_train = X.iloc[:split_index]
 X_test = X.iloc[split_index:]
@@ -88,39 +227,60 @@ y_train = y.iloc[:split_index]
 y_test = y.iloc[split_index:]
 
 
-print()
-print("Training rows:", len(X_train))
-print("Testing rows:", len(X_test))
+print(
+    "\nTraining rows:",
+    len(X_train)
+)
+
+print(
+    "Testing rows:",
+    len(X_test)
+)
 
 
 # ==========================================================
-# DEFINE MODELS
+# MODELS
 # ==========================================================
 
 models = {
 
-    "Ridge Regression": Pipeline([
-        ("scaler", StandardScaler()),
-        ("model", Ridge(alpha=1.0))
-    ]),
+    "Ridge Regression":
 
-    "Random Forest": RandomForestRegressor(
-        n_estimators=200,
-        random_state=42,
-        n_jobs=-1
-    ),
+        Pipeline([
+            (
+                "scaler",
+                StandardScaler()
+            ),
 
-    "Gradient Boosting": GradientBoostingRegressor(
-        n_estimators=200,
-        learning_rate=0.05,
-        max_depth=3,
-        random_state=42
-    )
+            (
+                "model",
+                Ridge(
+                    alpha=1.0
+                )
+            )
+        ]),
+
+    "Random Forest":
+
+        RandomForestRegressor(
+            n_estimators=200,
+            random_state=42,
+            n_jobs=-1
+        ),
+
+    "Gradient Boosting":
+
+        GradientBoostingRegressor(
+            n_estimators=200,
+            learning_rate=0.05,
+            max_depth=3,
+            random_state=42
+        )
 }
 
 
 # ==========================================================
-# TRAIN AND EVALUATE MODELS
+# TRAIN AND EVALUATE
 # ==========================================================
 
 results = []
@@ -159,14 +319,26 @@ for name, model in models.items():
         y_pred
     )
 
-    print("MAE :", mae)
-    print("RMSE:", rmse)
-    print("R²  :", r2)
+    print(
+        f"MAE : {mae:.6f}"
+    )
+
+    print(
+        f"RMSE: {rmse:.6f}"
+    )
+
+    print(
+        f"R2  : {r2:.6f}"
+    )
 
     results.append({
+
         "model": name,
+
         "MAE": mae,
+
         "RMSE": rmse,
+
         "R2": r2
     })
 
@@ -197,12 +369,11 @@ print(
 # SELECT BEST MODEL
 # ==========================================================
 
-# Primary criterion:
-# Lowest RMSE
-
 best_model_name = (
     results_df
-    .sort_values("RMSE")
+    .sort_values(
+        "RMSE"
+    )
     .iloc[0]["model"]
 )
 
@@ -231,13 +402,17 @@ joblib.dump(
     "aqi_model.pkl"
 )
 
-print()
-print("Best model saved as:")
-print("aqi_model.pkl")
+print(
+    "\nBest model saved:"
+)
+
+print(
+    "aqi_model.pkl"
+)
 
 
 # ==========================================================
-# SAVE MODEL COMPARISON
+# SAVE COMPARISON
 # ==========================================================
 
 results_df.to_csv(
@@ -245,38 +420,96 @@ results_df.to_csv(
     index=False
 )
 
-print()
-print("Model comparison saved as:")
-print("model_comparison.csv")
-
 
 # ==========================================================
-# SAVE MODEL METADATA
+# SAVE METADATA
 # ==========================================================
 
 metadata = {
 
-    "best_model": best_model_name,
+    "best_model":
+        best_model_name,
 
-    "features": features,
+    "features":
+        features,
 
-    "forecast_horizon": "72 hours",
+    "forecast_horizon":
+        "72 hours",
 
-    "selection_metric": "RMSE"
+    "selection_metric":
+        "RMSE",
 
+    "training_source":
+        "Hopsworks Feature Store with local features.csv fallback",
+
+    "training_rows":
+        len(X_train),
+
+    "testing_rows":
+        len(X_test),
+
+    "MAE":
+        float(
+            results_df
+            .loc[
+                results_df["model"] == best_model_name,
+                "MAE"
+            ]
+            .iloc[0]
+        ),
+
+    "RMSE":
+        float(
+            results_df
+            .loc[
+                results_df["model"] == best_model_name,
+                "RMSE"
+            ]
+            .iloc[0]
+        ),
+
+    "R2":
+        float(
+            results_df
+            .loc[
+                results_df["model"] == best_model_name,
+                "R2"
+            ]
+            .iloc[0]
+        )
 }
+
 
 joblib.dump(
     metadata,
     "model_metadata.pkl"
 )
 
-print()
-print("Model metadata saved as:")
-print("model_metadata.pkl")
 
+# ==========================================================
+# FINAL
+# ==========================================================
 
 print()
 print("=" * 60)
 print("TRAINING PIPELINE COMPLETED SUCCESSFULLY")
+print("=" * 60)
+
+print(
+    "Best model:",
+    best_model_name
+)
+
+print(
+    "Model saved: aqi_model.pkl"
+)
+
+print(
+    "Comparison saved: model_comparison.csv"
+)
+
+print(
+    "Metadata saved: model_metadata.pkl"
+)
+
 print("=" * 60)

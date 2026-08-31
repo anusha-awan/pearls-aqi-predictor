@@ -1,88 +1,63 @@
 # 🌍 Pearls AQI Predictor
 
-An end-to-end machine learning application that predicts **Air Quality Index (AQI) for the next 3 days** using historical air-quality data, automated feature engineering, and a Random Forest regression model.
+## 3-Day Air Quality Index Forecast
 
-The project includes model training, chronological evaluation, automated feature processing, GitHub Actions integration, and an interactive Streamlit dashboard.
+Pearls AQI Predictor is an end-to-end machine learning system that predicts Air Quality Index (AQI) for the next 3 days using a serverless data and ML pipeline.
+
+The project uses real-time air-quality data, automated feature engineering, historical backfill, machine-learning model training, Hopsworks Feature Store and Model Registry, GitHub Actions automation, and an interactive Streamlit dashboard.
 
 ---
 
-## 📌 Project Overview
+## 🎯 Project Objective
 
-Air quality can change significantly over time due to changes in particulate matter and atmospheric pollutants.
+The objective of this project is to build an automated system that:
 
-**Pearls AQI Predictor** uses historical pollution data to learn AQI patterns and generate hourly AQI predictions for the next **72 hours**.
-
-### Main objectives
-
-* Collect and process historical air-quality data
-* Engineer time-series and lag-based features
-* Calculate an EPA-style AQI target from PM2.5
-* Compare multiple machine-learning models
-* Select the best-performing model
-* Evaluate the model using a chronological train-test split
-* Generate a 72-hour AQI forecast
-* Present predictions through an interactive Streamlit dashboard
-* Automate feature processing using GitHub Actions
+* Collects air-quality data from an external API
+* Generates useful time-based and historical features
+* Stores engineered features in a Feature Store
+* Uses historical data to train machine-learning models
+* Evaluates multiple regression models
+* Selects the best-performing model
+* Forecasts AQI for the next 72 hours
+* Provides model explainability using SHAP
+* Generates AQI health alerts
+* Displays current and predicted AQI through an interactive dashboard
 
 ---
 
 ## 🏗️ System Architecture
 
 ```text
-Air Quality Data
-       │
-       ▼
+External AQI API
+       ↓
 Data Collection
-       │
-       ▼
+       ↓
 Feature Engineering
-       │
-       ├── Pollutant Features
-       ├── Time Features
-       ├── Lag Features
-       └── Rolling Features
-       │
-       ▼
-EPA-style PM2.5 AQI Calculation
-       │
-       ▼
-Training Dataset
-       │
-       ▼
-Chronological 80/20 Split
-       │
-       ▼
-Model Training
-       │
-       ├── Ridge Regression
-       ├── Random Forest
-       └── Gradient Boosting
-       │
-       ▼
-Model Comparison
-       │
-       ▼
-Random Forest Selected
-       │
-       ▼
-Saved Model (aqi_model.pkl)
-       │
-       ▼
+       ↓
+Hopsworks Feature Store
+       ↓
+Historical Backfill
+       ↓
+Model Training & Evaluation
+       ↓
+Best Model Selection
+       ↓
+Hopsworks Model Registry
+       ↓
+72-Hour AQI Forecast
+       ↓
 Streamlit Dashboard
-       │
-       ├── Current AQI
-       ├── 72-Hour Forecast
-       ├── Daily Forecast
-       ├── Model Performance
-       ├── Feature Importance
-       └── AQI Health Alerts
 ```
+
+GitHub Actions automates the feature pipeline hourly and the model-training pipeline daily.
 
 ---
 
-## 🧪 Data and Features
+## 📊 Data & Feature Engineering
 
-The project uses air-quality observations containing pollutant measurements such as:
+The pipeline collects pollutant and air-quality information and generates additional features for machine-learning prediction.
+
+### Input pollutants
 
 * CO
 * NO
@@ -93,211 +68,236 @@ The project uses air-quality observations containing pollutant measurements such
 * PM10
 * NH₃
 
-Additional engineered features include:
+### Engineered features
 
-### Time features
+The project includes:
 
 * Hour
 * Day
 * Month
 * Day of week
+* AQI lag features
+* PM2.5 lag features
+* PM10 lag features
+* Rolling AQI statistics
+* AQI change rate
 
-### AQI lag features
-
-* AQI lag 1
-* AQI lag 3
-* AQI lag 6
-* AQI lag 12
-* AQI lag 24
-* AQI lag 48
-* AQI lag 72
-
-### Pollution lag features
-
-* PM2.5 lag 1
-* PM10 lag 1
-
-### Rolling AQI features
-
-* 6-hour rolling AQI
-* 24-hour rolling AQI
-* 72-hour rolling AQI
-
-### Additional feature
-
-* AQI change
-
-The final model uses **26 input features**.
+A total of **26 model input features** are used for prediction.
 
 ---
 
-## 📐 EPA-style AQI Target
+## 🤖 Machine Learning
 
-The project calculates an **EPA-style AQI from PM2.5 concentration** rather than using the original 1–5 air-quality index supplied by the source API.
-
-The resulting AQI follows the standard **0–500 AQI scale**.
-
-The calculated AQI is shifted by one hour to create the prediction target:
-
-```text
-Current observations → Next-hour AQI target
-```
-
-This prevents the model from simply predicting the AQI value at the same timestamp.
-
----
-
-## 🤖 Machine Learning Models
-
-Three regression models were evaluated:
+Multiple regression models were experimented with:
 
 1. Ridge Regression
-2. Random Forest Regressor
-3. Gradient Boosting Regressor
+2. Random Forest
+3. Gradient Boosting
 
-A chronological **80/20 train-test split** was used instead of randomly shuffling the time-series data.
-
-### Model comparison
-
-| Model             |      MAE |     RMSE |         R² |
-| ----------------- | -------: | -------: | ---------: |
-| Ridge Regression  |    11.78 |    14.40 |     0.7519 |
-| Random Forest     | **3.72** | **6.58** | **0.9483** |
-| Gradient Boosting |     4.64 |     7.02 |     0.9411 |
-
-### Selected model
-
-**Random Forest Regressor**
-
-Selection criterion:
-
-**Lowest RMSE on the chronological test set.**
-
----
-
-## 📊 Model Evaluation
-
-Final test-set performance:
-
-* **MAE:** 3.72 AQI points
-* **RMSE:** 6.58 AQI points
-* **R²:** 0.9483
-
-The evaluation was performed on the actual EPA-style AQI scale rather than the original 1–5 source index.
-
-The test-set AQI values ranged from approximately **59 to 210**, while model predictions ranged from approximately **59 to 219**.
-
----
-
-## 🔮 72-Hour AQI Forecast
-
-The Streamlit application generates hourly predictions for the next **72 hours**.
-
-The dashboard provides:
-
-* 72-hour AQI prediction chart
-* Daily minimum AQI
-* Daily average AQI
-* Daily maximum AQI
-* AQI health alerts
-* Current AQI
-* Current PM2.5 concentration
-
-The forecast is divided into three daily periods for easier interpretation.
-
----
-
-## 🖥️ Streamlit Dashboard
-
-The dashboard provides an interactive interface containing:
-
-### Current Air Quality
-
-Displays:
-
-* Current EPA AQI
-* AQI category
-* PM2.5 concentration
-* Latest available timestamp
-
-### Next 3 Days Forecast
-
-Displays:
-
-* Hourly 72-hour forecast
-* Forecast graph
-* Daily AQI summary
-
-### Model Performance
-
-Displays:
+The models are evaluated using:
 
 * MAE
 * RMSE
 * R²
 
-### Model Explainability
+A chronological 80/20 train-test split is used to respect the time-series nature of the data.
 
-Displays Random Forest feature importance through:
+### Best Model
 
-* Feature importance table
-* Feature importance chart
+**Random Forest Regressor**
 
-### AQI Alerts
-
-The dashboard provides warnings when predicted AQI reaches unhealthy levels.
+The model is selected using RMSE as the primary selection metric.
 
 ---
 
-## ⚙️ Technologies Used
+## 📈 Model Performance
+
+The final Random Forest model achieved approximately:
+
+| Metric |           Score |
+| ------ | --------------: |
+| MAE    | 3.72 AQI points |
+| RMSE   | 6.58 AQI points |
+| R²     |          0.9483 |
+
+These metrics represent the model evaluation results used by the dashboard.
+
+---
+
+## 🔮 72-Hour Forecast
+
+The system generates hourly AQI predictions for the next 72 hours.
+
+The dashboard provides:
+
+* Day +1 forecast
+* Day +2 forecast
+* Day +3 forecast
+* Hourly forecast trend
+* Daily forecast summary
+* Maximum predicted AQI
+* AQI health category
+
+---
+
+## 🧠 Model Explainability
+
+SHAP (SHapley Additive exPlanations) is used to explain the model's predictions.
+
+The dashboard provides:
+
+* Global feature importance
+* Individual prediction explanation
+* Feature contribution direction
+
+This helps identify which variables have the greatest influence on AQI predictions.
+
+---
+
+## 🚨 AQI Health Alerts
+
+The dashboard categorizes predicted AQI levels and displays health-related alerts when AQI reaches higher-risk categories.
+
+This makes the prediction system more useful for end users instead of displaying only numerical predictions.
+
+---
+
+## ⚙️ Automated Pipelines
+
+### Hourly Feature Pipeline
+
+GitHub Actions automatically runs the feature pipeline every hour.
+
+The pipeline:
+
+1. Fetches new AQI data
+2. Performs feature engineering
+3. Uploads engineered features to Hopsworks
+
+Workflow:
+
+```text
+GitHub Actions
+      ↓
+save_data.py
+      ↓
+feature_engineering.py
+      ↓
+upload_features.py
+      ↓
+Hopsworks Feature Store
+```
+
+### Daily Training Pipeline
+
+The training workflow runs automatically every day.
+
+It:
+
+1. Loads historical features
+2. Trains and evaluates multiple models
+3. Selects the best model
+4. Saves the trained model
+5. Uploads the model to Hopsworks Model Registry
+
+Workflow:
+
+```text
+GitHub Actions
+      ↓
+train_model.py
+      ↓
+Model Evaluation
+      ↓
+Best Model
+      ↓
+upload_model.py
+      ↓
+Hopsworks Model Registry
+```
+
+---
+
+## 🖥️ Streamlit Dashboard
+
+The interactive dashboard displays:
+
+* Current AQI
+* PM2.5
+* AQI category
+* 72-hour forecast
+* Daily forecast summary
+* Model performance
+* SHAP feature importance
+* Individual prediction explanation
+* Model information
+* Data information
+* AQI health alerts
+
+---
+
+## 🛠️ Technologies
 
 * Python
 * Pandas
 * NumPy
 * Scikit-learn
 * Random Forest
-* Matplotlib
-* Joblib
-* Streamlit
-* Hopsworks
+* Gradient Boosting
+* Ridge Regression
+* SHAP
+* Hopsworks Feature Store
+* Hopsworks Model Registry
 * GitHub Actions
-* Python dotenv
+* Streamlit
+* Matplotlib
+* TensorFlow
 
 ---
 
-## 📂 Project Structure
+## 📁 Project Structure
 
 ```text
-pearls-aqi-predictor/
-│
+.
 ├── app.py
+├── save_data.py
+├── backfill.py
+├── feature_engineering.py
 ├── prepare_training_data.py
 ├── train_model.py
-├── evaluate_model.py
 ├── predict_3_days.py
-│
-├── features.csv
-├── training_data.csv
-├── historical_aqi.csv
-│
+├── evaluate_model.py
+├── eda.py
+├── shap_analysis.py
+├── upload_features.py
+├── upload_model.py
+├── test_api.py
+├── historical_test.py
+├── check_data.py
 ├── aqi_model.pkl
-├── model_comparison.csv
 ├── model_metadata.pkl
-│
+├── model_comparison.csv
+├── features.csv
+├── historical_aqi.csv
+├── training_data.csv
+├── predictions_3_days.csv
 ├── requirements.txt
-├── .gitignore
-└── README.md
+├── PROJECT_REPORT.md
+└── .github/
+    └── workflows/
+        ├── feature_pipeline.yml
+        └── daily_training.yml
 ```
 
 ---
 
-## 🚀 How to Run Locally
+## ▶️ Run Locally
 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/anusha-awan/pearls-aqi-predictor.git
-cd pearls-aqi-predictor
+git clone <YOUR_GITHUB_REPOSITORY_URL>
+cd <YOUR_REPOSITORY_FOLDER>
 ```
 
 ### 2. Create a virtual environment
@@ -308,10 +308,10 @@ python -m venv venv
 
 ### 3. Activate the environment
 
-#### Windows PowerShell
+Windows:
 
 ```powershell
-.\venv\Scripts\Activate.ps1
+venv\Scripts\activate
 ```
 
 ### 4. Install dependencies
@@ -320,112 +320,50 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-### 5. Run the Streamlit application
+### 5. Configure environment variables
+
+Create a `.env` file containing the required API credentials:
+
+```text
+OPENWEATHER_API_KEY=your_api_key
+HOPSWORKS_API_KEY=your_api_key
+```
+
+Do not commit `.env` or API keys to GitHub.
+
+### 6. Run the dashboard
 
 ```bash
 streamlit run app.py
 ```
 
-The application will open locally in the browser.
+---
+
+## 🔐 Security
+
+API credentials are stored using environment variables and GitHub Actions Secrets.
+
+The `.env` file is excluded from version control through `.gitignore`.
 
 ---
 
-## 🔄 Model Training
+## 📌 Project Deliverables
 
-To prepare the training dataset:
+The completed system provides:
 
-```bash
-python prepare_training_data.py
-```
-
-To train and compare the models:
-
-```bash
-python train_model.py
-```
-
-To evaluate the saved model:
-
-```bash
-python evaluate_model.py
-```
-
-The best model is saved as:
-
-```text
-aqi_model.pkl
-```
-
----
-
-## ☁️ Hopsworks Integration
-
-Hopsworks was used as part of the project's feature-store and model-management workflow.
-
-The project was also designed to support loading features and models through Hopsworks.
-
-Due to compute/resource limitations, the final dashboard can run locally using the saved model while the automated pipeline remains integrated with the project workflow.
-
-The Hopsworks compute limitation is documented as a project limitation rather than treated as a model failure.
-
----
-
-## 🔁 GitHub Actions
-
-GitHub Actions is used to automate the AQI feature pipeline.
-
-The feature pipeline successfully completed execution on GitHub Actions.
-
-The workflow processes the required feature-engineering pipeline automatically and supports reproducibility of the project workflow.
-
----
-
-## ⚠️ Limitations
-
-The current implementation has several limitations:
-
-1. The forecasting model predicts AQI based on currently available pollutant and engineered features.
-2. Future pollutant concentrations are not independently forecasted.
-3. The 72-hour recursive forecast therefore relies on the latest available feature state together with future time features.
-4. The current system focuses on PM2.5-based EPA-style AQI.
-5. Hopsworks compute availability may limit cloud-based execution.
-6. The current dataset represents a limited historical period and additional data could improve generalization.
-
-These limitations should be considered when interpreting long-horizon forecasts.
-
----
-
-## 🔮 Future Improvements
-
-Future versions could improve the system by:
-
-* Forecasting future pollutant concentrations separately
-* Using weather variables such as temperature, humidity, wind speed, and pressure
-* Adding more historical data
-* Testing XGBoost or other advanced time-series models
-* Adding prediction intervals
-* Implementing automated model retraining
-* Deploying the complete pipeline to a cloud environment
-* Adding location-based AQI forecasting
-* Supporting multiple pollutant-specific AQI calculations
-
----
-
-## 📌 Key Results
-
-The final system achieved:
-
-```text
-Model: Random Forest Regressor
-
-MAE  : 3.72 AQI points
-RMSE : 6.58 AQI points
-R²   : 0.9483
-
-Forecast Horizon: 72 hours
-Input Features: 26
-AQI Scale: 0–500
-```
+* End-to-end AQI prediction system
+* Historical feature backfill
+* Feature Store integration
+* Machine-learning model comparison
+* Best-model selection
+* Model Registry integration
+* 72-hour AQI forecasting
+* Automated hourly feature pipeline
+* Automated daily training pipeline
+* Interactive Streamlit dashboard
+* SHAP model explainability
+* AQI health alerts
+* Project documentation
 
 ---
 
@@ -433,4 +371,6 @@ AQI Scale: 0–500
 
 **Pearls AQI Predictor**
 
-Developed as an end-to-end machine-learning project integrating data processing, feature engineering, model training, evaluation, automation, and interactive visualization.
+Built as part of the 10Pearls Shine Internship project.
+
+---

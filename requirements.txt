@@ -1,0 +1,11 @@
+pandas==2.3.3
+numpy==2.0.2
+scikit-learn==1.8.0
+joblib==1.5.3
+requests==2.34.2
+python-dotenv==1.2.3
+streamlit==1.40.1
+shap==0.51.0
+matplotlib==3.11.1
+hopsworks==5.0.6
+tensorflow==2.18.0
