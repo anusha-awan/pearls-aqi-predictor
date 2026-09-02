@@ -11,7 +11,102 @@ OUTPUT_FILE = "features.csv"
 
 
 # =========================================================
-# LOAD HISTORICAL DATA
+# EPA AQI CALCULATION FROM PM2.5
+# =========================================================
+#
+# EPA PM2.5 AQI:
+#
+# 0.0   - 9.0     -> AQI 0-50
+# 9.1   - 35.4    -> AQI 51-100
+# 35.5  - 55.4    -> AQI 101-150
+# 55.5  - 125.4   -> AQI 151-200
+# 125.5 - 225.4   -> AQI 201-300
+# 225.5 - 325.4   -> AQI 301-500
+#
+# Values above 325.4 are capped at AQI 500.
+#
+# PM2.5 concentration is truncated to one decimal place
+# before AQI calculation, following EPA methodology.
+# =========================================================
+
+def calculate_pm25_aqi(pm25):
+
+    if pd.isna(pm25):
+        return None
+
+    try:
+        pm25 = float(pm25)
+
+    except (ValueError, TypeError):
+        return None
+
+    if pm25 < 0:
+        return None
+
+    # EPA truncates PM2.5 concentration to one decimal
+    pm25 = int(pm25 * 10) / 10
+
+    # PM2.5 above the highest EPA breakpoint
+    # is capped at AQI 500.
+    if pm25 > 325.4:
+        return 500
+
+    breakpoints = [
+
+        (0.0, 9.0, 0, 50),
+
+        (9.1, 35.4, 51, 100),
+
+        (35.5, 55.4, 101, 150),
+
+        (55.5, 125.4, 151, 200),
+
+        (125.5, 225.4, 201, 300),
+
+        (225.5, 325.4, 301, 500)
+
+    ]
+
+    for (
+        concentration_low,
+        concentration_high,
+        aqi_low,
+        aqi_high
+    ) in breakpoints:
+
+        if (
+            concentration_low
+            <= pm25
+            <= concentration_high
+        ):
+
+            aqi = (
+
+                (
+                    aqi_high
+                    - aqi_low
+                )
+                /
+                (
+                    concentration_high
+                    - concentration_low
+                )
+
+            ) * (
+
+                pm25
+                - concentration_low
+
+            ) + aqi_low
+
+            # EPA AQI is rounded to nearest integer
+            return int(round(aqi))
+
+    return None
+
+
+# =========================================================
+# START
 # =========================================================
 
 print("=" * 60)
@@ -26,34 +121,271 @@ print("Raw dataset shape:", df.shape)
 
 
 # =========================================================
+# REQUIRED RAW COLUMNS
+# =========================================================
+
+required_raw_columns = [
+
+    "datetime",
+
+    "co",
+    "no",
+    "no2",
+    "o3",
+    "so2",
+    "pm2_5",
+    "pm10",
+    "nh3"
+
+]
+
+
+missing_raw_columns = [
+
+    column
+
+    for column in required_raw_columns
+
+    if column not in df.columns
+
+]
+
+
+if missing_raw_columns:
+
+    raise ValueError(
+
+        "Missing required raw columns:\n"
+        +
+        "\n".join(
+            missing_raw_columns
+        )
+
+    )
+
+
+# =========================================================
 # DATETIME
 # =========================================================
 
 df["datetime"] = pd.to_datetime(
+
     df["datetime"],
-    utc=True
+
+    utc=True,
+
+    errors="coerce"
+
 )
 
-# Sort chronologically and remove duplicate timestamps
+
+invalid_datetime_count = (
+    df["datetime"].isna().sum()
+)
+
+
+if invalid_datetime_count > 0:
+
+    print(
+
+        f"\nRemoving {invalid_datetime_count} "
+        "rows with invalid datetime..."
+
+    )
+
+    df = df.dropna(
+        subset=["datetime"]
+    )
+
+
+# Sort chronologically
 df = (
-    df.sort_values("datetime")
-      .drop_duplicates(
-          subset=["datetime"],
-          keep="last"
-      )
-      .reset_index(drop=True)
+
+    df
+
+    .sort_values("datetime")
+
+    .drop_duplicates(
+
+        subset=["datetime"],
+
+        keep="last"
+
+    )
+
+    .reset_index(drop=True)
+
 )
 
 
 # =========================================================
-# TIME-BASED FEATURES
+# NUMERIC CONVERSION
 # =========================================================
 
-df["hour"] = df["datetime"].dt.hour
+numeric_columns = [
 
-df["day"] = df["datetime"].dt.day
+    "co",
+    "no",
+    "no2",
+    "o3",
+    "so2",
+    "pm2_5",
+    "pm10",
+    "nh3"
 
-df["month"] = df["datetime"].dt.month
+]
+
+
+for column in numeric_columns:
+
+    df[column] = pd.to_numeric(
+
+        df[column],
+
+        errors="coerce"
+
+    )
+
+
+# =========================================================
+# PM2.5 VALIDATION
+# =========================================================
+
+missing_pm25 = (
+    df["pm2_5"].isna().sum()
+)
+
+negative_pm25 = (
+    (df["pm2_5"] < 0).sum()
+)
+
+
+print(
+    "\nPM2.5 missing values:",
+    missing_pm25
+)
+
+print(
+    "PM2.5 negative values:",
+    negative_pm25
+)
+
+
+# =========================================================
+# REMOVE INVALID PM2.5 ROWS
+# =========================================================
+
+if missing_pm25 > 0:
+
+    print(
+        f"\nRemoving {missing_pm25} rows "
+        "with missing PM2.5..."
+    )
+
+    df = (
+
+        df
+
+        .dropna(
+            subset=["pm2_5"]
+        )
+
+        .reset_index(drop=True)
+
+    )
+
+
+if negative_pm25 > 0:
+
+    print(
+        f"\nRemoving {negative_pm25} rows "
+        "with negative PM2.5..."
+    )
+
+    df = (
+
+        df[
+            df["pm2_5"] >= 0
+        ]
+
+        .reset_index(drop=True)
+
+    )
+
+
+# =========================================================
+# EPA AQI
+# =========================================================
+
+print(
+    "\nCalculating EPA-style AQI from PM2.5..."
+)
+
+
+df["aqi"] = (
+
+    df["pm2_5"]
+
+    .apply(
+        calculate_pm25_aqi
+    )
+
+)
+
+
+# =========================================================
+# REMOVE INVALID AQI ROWS
+# =========================================================
+
+invalid_aqi_rows = (
+    df["aqi"].isna().sum()
+)
+
+
+if invalid_aqi_rows > 0:
+
+    print(
+
+        f"\nRemoving {invalid_aqi_rows} rows "
+        "where EPA AQI could not be calculated..."
+
+    )
+
+    df = (
+
+        df
+
+        .dropna(
+            subset=["aqi"]
+        )
+
+        .reset_index(drop=True)
+
+    )
+
+
+# Make sure AQI is numeric
+df["aqi"] = pd.to_numeric(
+    df["aqi"],
+    errors="coerce"
+)
+
+
+# =========================================================
+# TIME FEATURES
+# =========================================================
+
+df["hour"] = (
+    df["datetime"].dt.hour
+)
+
+df["day"] = (
+    df["datetime"].dt.day
+)
+
+df["month"] = (
+    df["datetime"].dt.month
+)
 
 df["day_of_week"] = (
     df["datetime"].dt.dayofweek
@@ -109,30 +441,54 @@ df["pm10_lag_1"] = (
 # =========================================================
 # ROLLING AQI FEATURES
 #
-# shift(1) prevents current AQI from being used
-# to calculate its own historical rolling features.
+# shift(1) ensures the current AQI is NOT included
+# in its own historical rolling calculation.
 # =========================================================
 
 previous_aqi = (
     df["aqi"].shift(1)
 )
 
+
 df["aqi_rolling_6"] = (
+
     previous_aqi
-    .rolling(window=6)
+
+    .rolling(
+        window=6,
+        min_periods=6
+    )
+
     .mean()
+
 )
+
 
 df["aqi_rolling_24"] = (
+
     previous_aqi
-    .rolling(window=24)
+
+    .rolling(
+        window=24,
+        min_periods=24
+    )
+
     .mean()
+
 )
 
+
 df["aqi_rolling_72"] = (
+
     previous_aqi
-    .rolling(window=72)
+
+    .rolling(
+        window=72,
+        min_periods=72
+    )
+
     .mean()
+
 )
 
 
@@ -141,23 +497,22 @@ df["aqi_rolling_72"] = (
 # =========================================================
 
 df["aqi_change"] = (
+
     df["aqi"]
+
     -
+    
     df["aqi_lag_1"]
+
 )
 
 
 # =========================================================
 # TARGET
 #
-# The model predicts the AQI of the next hour.
+# Predict the EPA AQI of the next observation.
 #
-# For historical/training rows:
-#
-# current AQI -> next-hour AQI
-#
-# The final/latest row naturally has no next-hour
-# observation yet, so its target_aqi remains NaN.
+# target_aqi = next-row AQI
 # =========================================================
 
 df["target_aqi"] = (
@@ -166,12 +521,7 @@ df["target_aqi"] = (
 
 
 # =========================================================
-# REMOVE ROWS WITHOUT SUFFICIENT HISTORY
-#
-# IMPORTANT:
-# We remove rows missing historical FEATURES,
-# but we DO NOT remove the latest row merely because
-# target_aqi is unavailable.
+# FEATURE COLUMNS
 # =========================================================
 
 feature_columns = [
@@ -210,151 +560,270 @@ feature_columns = [
     "aqi_rolling_72",
 
     "aqi_change"
+
 ]
 
 
+# =========================================================
+# REMOVE ROWS WITHOUT SUFFICIENT FEATURE HISTORY
+#
+# IMPORTANT:
+# target_aqi is intentionally NOT included here.
+#
+# The latest row is allowed to have a missing target
+# because there is no next observation yet.
+# =========================================================
+
+before_feature_cleaning = len(df)
+
+
 df = (
+
     df
+
     .dropna(
         subset=feature_columns
     )
+
     .reset_index(drop=True)
+
+)
+
+
+removed_feature_rows = (
+
+    before_feature_cleaning
+    -
+    len(df)
+
+)
+
+
+print(
+
+    "\nRows removed because of insufficient "
+    "historical feature data:",
+
+    removed_feature_rows
+
 )
 
 
 # =========================================================
-# VALIDATION
+# TARGET VALIDATION
 # =========================================================
 
-required_columns = [
+missing_targets = (
 
-    "datetime",
+    df["target_aqi"]
 
-    "aqi",
+    .isna()
 
-    "co",
-    "no",
-    "no2",
-    "o3",
-    "so2",
-    "pm2_5",
-    "pm10",
-    "nh3",
+    .sum()
 
-    "hour",
-    "day",
-    "month",
-    "day_of_week",
-
-    "aqi_lag_1",
-    "aqi_lag_3",
-    "aqi_lag_6",
-    "aqi_lag_12",
-    "aqi_lag_24",
-    "aqi_lag_48",
-    "aqi_lag_72",
-
-    "pm2_5_lag_1",
-    "pm10_lag_1",
-
-    "aqi_rolling_6",
-    "aqi_rolling_24",
-    "aqi_rolling_72",
-
-    "aqi_change",
-
-    "target_aqi"
-]
+)
 
 
-missing_columns = [
-
-    column
-
-    for column in required_columns
-
-    if column not in df.columns
-
-]
+print(
+    "Missing target_aqi values:",
+    missing_targets
+)
 
 
-if missing_columns:
+# =========================================================
+# HANDLE MISSING TARGETS
+#
+# Normally only the final row should have a missing target.
+#
+# If there are unexpected missing targets in the middle,
+# remove those rows because they cannot be used for
+# supervised training.
+# =========================================================
 
-    raise ValueError(
-        "Missing required columns:\n"
-        +
-        "\n".join(
-            missing_columns
+if missing_targets > 1:
+
+    print(
+        "\nWARNING: Multiple missing target_aqi values detected."
+    )
+
+    print(
+        "Removing rows with missing targets."
+    )
+
+    df = (
+
+        df
+
+        .dropna(
+            subset=["target_aqi"]
         )
+
+        .reset_index(drop=True)
+
+    )
+
+    missing_targets = (
+        df["target_aqi"].isna().sum()
     )
 
 
 # =========================================================
-# CHECK MISSING VALUES
-#
-# target_aqi is allowed to be missing ONLY for the
-# latest observation because there is no next-hour
-# actual AQI available yet.
+# FEATURE MISSING VALUE CHECK
 # =========================================================
 
 feature_missing = (
+
     df[feature_columns]
+
     .isnull()
+
     .sum()
+
     .sum()
+
 )
 
 
 if feature_missing > 0:
 
     raise ValueError(
-        f"Feature dataset contains "
+
+        f"Feature dataset still contains "
         f"{feature_missing} missing values."
+
     )
 
 
-# Count missing target values
-missing_targets = (
-    df["target_aqi"]
-    .isnull()
-    .sum()
+# =========================================================
+# AQI RANGE CHECK
+# =========================================================
+
+aqi_values = (
+    df["aqi"]
+    .dropna()
 )
 
 
-# Only the final row may have a missing target
-if missing_targets > 1:
+target_values = (
+    df["target_aqi"]
+    .dropna()
+)
+
+
+aqi_min = (
+    aqi_values.min()
+)
+
+aqi_max = (
+    aqi_values.max()
+)
+
+
+target_min = (
+    target_values.min()
+)
+
+target_max = (
+    target_values.max()
+)
+
+
+print(
+    "\nCalculated AQI range:",
+    f"{aqi_min:.1f} -> {aqi_max:.1f}"
+)
+
+
+print(
+    "Target AQI range:",
+    f"{target_min:.1f} -> {target_max:.1f}"
+)
+
+
+# =========================================================
+# STRICT AQI VALIDATION
+# =========================================================
+
+if (
+
+    aqi_min < 0
+    or
+    aqi_max > 500
+
+):
 
     raise ValueError(
-        "More than one target_aqi value is missing. "
-        "This indicates an unexpected data gap."
+
+        f"Current EPA AQI is outside valid "
+        f"range 0-500: {aqi_min} -> {aqi_max}"
+
+    )
+
+
+if (
+
+    target_min < 0
+    or
+    target_max > 500
+
+):
+
+    raise ValueError(
+
+        f"Target EPA AQI is outside valid "
+        f"range 0-500: {target_min} -> {target_max}"
+
     )
 
 
 # =========================================================
-# VALIDATE DUPLICATES
+# DUPLICATE DATETIME CHECK
 # =========================================================
 
 duplicate_datetimes = (
+
     df["datetime"]
+
     .duplicated()
+
     .sum()
+
 )
 
 
 if duplicate_datetimes > 0:
 
     raise ValueError(
-        f"Found {duplicate_datetimes} duplicate datetimes."
+
+        f"Found {duplicate_datetimes} "
+        "duplicate datetimes."
+
     )
 
 
 # =========================================================
-# SAVE ENGINEERED DATASET
+# DATASET SIZE CHECK
+# =========================================================
+
+if len(df) < 100:
+
+    raise ValueError(
+
+        "Not enough data after feature engineering."
+
+    )
+
+
+# =========================================================
+# SAVE
 # =========================================================
 
 df.to_csv(
+
     OUTPUT_FILE,
+
     index=False
+
 )
 
 
@@ -362,59 +831,65 @@ df.to_csv(
 # FINAL REPORT
 # =========================================================
 
-print("\n" + "=" * 60)
-print("FEATURE ENGINEERING COMPLETED")
-print("=" * 60)
+print(
+    "\n" + "=" * 60
+)
+
+print(
+    "FEATURE ENGINEERING COMPLETED"
+)
+
+print(
+    "=" * 60
+)
+
 
 print(
     "\nFinal dataset shape:",
     df.shape
 )
 
+
 print(
-    "\nTotal rows:",
+    "Total rows:",
     len(df)
 )
+
 
 print(
     "Total columns:",
     len(df.columns)
 )
 
-print(
-    "\nColumns:"
-)
-
-for column in df.columns:
-
-    print(
-        " -",
-        column
-    )
-
 
 print(
-    "\nFirst 5 rows:"
-)
-
-print(
-    df.head()
+    "\nEPA AQI range:"
 )
 
 
 print(
-    "\nMissing feature values:"
-)
-
-print(
-    df[feature_columns]
-    .isnull()
-    .sum()
+    f"{aqi_min:.1f} -> {aqi_max:.1f}"
 )
 
 
 print(
-    "\nMissing target_aqi values:",
+    "\nTarget EPA AQI range:"
+)
+
+
+print(
+    f"{target_min:.1f} -> {target_max:.1f}"
+)
+
+
+print(
+    "\nMissing feature values:",
+    feature_missing
+)
+
+
+print(
+    "Missing target_aqi values:",
     missing_targets
 )
 
@@ -422,6 +897,7 @@ print(
 print(
     "\nLatest engineered observation:"
 )
+
 
 print(
     df.tail(1).to_string(
@@ -434,6 +910,7 @@ print(
     "\nDate range:"
 )
 
+
 print(
     df["datetime"].min(),
     "->",
@@ -442,14 +919,18 @@ print(
 
 
 print(
-    "\nTarget AQI distribution:"
+    "\nTarget EPA AQI statistics:"
 )
 
+
 print(
+
     df["target_aqi"]
+
     .dropna()
-    .value_counts()
-    .sort_index()
+
+    .describe()
+
 )
 
 
@@ -458,5 +939,8 @@ print(
     OUTPUT_FILE
 )
 
-print("=" * 60)
+
+print(
+    "=" * 60
+)
 

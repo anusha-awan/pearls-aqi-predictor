@@ -50,9 +50,9 @@ mr = project.get_model_registry()
 print("\nCreating model version...")
 
 model = mr.python.create_model(
-    name="aqi_random_forest",
+    name="aqi_gradient_boosting",
     description=(
-        "Random Forest regression model for "
+        "Gradient Boosting regression model for "
         "72-hour AQI forecasting."
     )
 )

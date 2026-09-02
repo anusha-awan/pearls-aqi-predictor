@@ -1,0 +1,17 @@
+[theme]
+
+base = "light"
+
+primaryColor = "#7A5535"
+
+backgroundColor = "#F6EFE6"
+
+secondaryBackgroundColor = "#DCC6AA"
+
+textColor = "#3B2A1F"
+
+linkColor = "#765238"
+
+borderColor = "#C5AA8C"
+
+font = "serif"

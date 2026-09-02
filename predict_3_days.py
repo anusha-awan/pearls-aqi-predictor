@@ -2,49 +2,23 @@ import pandas as pd
 import joblib
 from datetime import timedelta
 
-# Load trained model
-model = joblib.load("aqi_model.pkl")
 
-# Load historical data
-df = pd.read_csv("historical_aqi.csv")
+# =========================================================
+# CONFIGURATION
+# =========================================================
 
-# Convert datetime
-df["datetime"] = pd.to_datetime(df["datetime"])
+MODEL_FILE = "aqi_model.pkl"
+DATA_FILE = "features.csv"
+OUTPUT_FILE = "predictions_3_days.csv"
 
-# Sort data
-df = df.sort_values("datetime").reset_index(drop=True)
+FORECAST_HOURS = 72
 
-# Create the same features used during training
-df["hour"] = df["datetime"].dt.hour
-df["day"] = df["datetime"].dt.day
-df["month"] = df["datetime"].dt.month
-df["day_of_week"] = df["datetime"].dt.dayofweek
 
-# AQI lag features
-df["aqi_lag_1"] = df["aqi"].shift(1)
-df["aqi_lag_3"] = df["aqi"].shift(3)
-df["aqi_lag_6"] = df["aqi"].shift(6)
-df["aqi_lag_12"] = df["aqi"].shift(12)
-df["aqi_lag_24"] = df["aqi"].shift(24)
-df["aqi_lag_48"] = df["aqi"].shift(48)
-df["aqi_lag_72"] = df["aqi"].shift(72)
+# =========================================================
+# MODEL FEATURES
+# =========================================================
 
-# Pollution lag features
-df["pm2_5_lag_1"] = df["pm2_5"].shift(1)
-df["pm10_lag_1"] = df["pm10"].shift(1)
-
-# Rolling AQI features
-df["aqi_rolling_6"] = df["aqi"].rolling(6).mean()
-df["aqi_rolling_24"] = df["aqi"].rolling(24).mean()
-df["aqi_rolling_72"] = df["aqi"].rolling(72).mean()
-
-# AQI change
-df["aqi_change"] = df["aqi"].diff()
-
-# Remove rows with missing feature values
-df = df.dropna().reset_index(drop=True)
-
-features = [
+MODEL_FEATURES = [
     "co",
     "no",
     "no2",
@@ -73,56 +47,432 @@ features = [
     "aqi_change"
 ]
 
-# Use latest available row as the starting point
-latest_row = df.iloc[-1].copy()
 
-print("Latest available data:")
-print(latest_row["datetime"])
-print("Current AQI:", latest_row["aqi"])
+# =========================================================
+# LOAD MODEL
+# =========================================================
 
-# Store predictions
-predictions = []
+print("=" * 60)
+print("PEARLS AQI PREDICTION")
+print("=" * 60)
 
-# Make 72 hourly predictions
-for i in range(1, 73):
+print("\nLoading trained model...")
 
-    future_time = latest_row["datetime"] + timedelta(hours=i)
+model = joblib.load(MODEL_FILE)
 
-    # Start with latest known values
-    future_row = latest_row.copy()
+print("Model loaded successfully.")
+print("Model type:", type(model).__name__)
 
-    # Update time-based features
-    future_row["datetime"] = future_time
-    future_row["hour"] = future_time.hour
-    future_row["day"] = future_time.day
-    future_row["month"] = future_time.month
-    future_row["day_of_week"] = future_time.dayofweek
 
-    # Predict AQI
-    X_future = pd.DataFrame([future_row])[features]
+# =========================================================
+# LOAD FEATURE DATA
+# =========================================================
 
-    predicted_aqi = model.predict(X_future)[0]
+print("\nLoading feature data...")
 
-    # Keep AQI within valid range
-    predicted_aqi = max(1, min(5, predicted_aqi))
+df = pd.read_csv(DATA_FILE)
 
-    predictions.append({
-        "datetime": future_time,
-        "predicted_aqi": round(predicted_aqi, 2)
-    })
-
-# Convert predictions to dataframe
-prediction_df = pd.DataFrame(predictions)
-
-# Add day number
-prediction_df["day"] = (
-    prediction_df["datetime"].dt.date
+df["datetime"] = pd.to_datetime(
+    df["datetime"],
+    utc=True
 )
 
-# Save predictions
-prediction_df.to_csv("predictions_3_days.csv", index=False)
+df = (
+    df
+    .sort_values("datetime")
+    .reset_index(drop=True)
+)
 
-print("\n3-Day AQI Prediction:")
-print(prediction_df)
+print("Rows:", len(df))
+print("Columns:", len(df.columns))
 
-print("\nPredictions saved as: predictions_3_days.csv")
+
+# =========================================================
+# VALIDATE MODEL FEATURES
+# =========================================================
+
+missing_features = [
+    feature
+    for feature in MODEL_FEATURES
+    if feature not in df.columns
+]
+
+if missing_features:
+
+    raise ValueError(
+        "Missing model features:\n"
+        + "\n".join(missing_features)
+    )
+
+print("All model features are available.")
+
+
+# =========================================================
+# REMOVE ROWS WITH MISSING MODEL FEATURES
+# =========================================================
+
+df_valid = (
+    df[
+        MODEL_FEATURES + ["datetime"]
+    ]
+    .dropna()
+    .reset_index(drop=True)
+)
+
+if len(df_valid) == 0:
+
+    raise ValueError(
+        "No valid rows available for prediction."
+    )
+
+
+# =========================================================
+# LATEST AVAILABLE ROW
+# =========================================================
+
+latest_row = df_valid.iloc[-1].copy()
+
+latest_time = latest_row["datetime"]
+
+print("\nLatest available data:")
+print("Datetime:", latest_time)
+print("Current AQI:", latest_row["aqi"])
+print("Current PM2.5:", latest_row["pm2_5"])
+
+
+# =========================================================
+# CREATE HISTORY FOR RECURSIVE PREDICTION
+# =========================================================
+#
+# We maintain the recent AQI history so that lag and
+# rolling features can be updated using previous
+# predictions.
+#
+
+aqi_history = (
+    df["aqi"]
+    .dropna()
+    .astype(float)
+    .tolist()
+)
+
+if len(aqi_history) < 72:
+
+    raise ValueError(
+        "At least 72 historical AQI observations "
+        "are required for recursive forecasting."
+    )
+
+
+# Keep only the recent history needed for lag features.
+
+aqi_history = aqi_history[-72:]
+
+
+# PM2.5 and PM10 history
+
+pm25_history = (
+    df["pm2_5"]
+    .dropna()
+    .astype(float)
+    .tolist()
+)
+
+pm10_history = (
+    df["pm10"]
+    .dropna()
+    .astype(float)
+    .tolist()
+)
+
+if len(pm25_history) == 0 or len(pm10_history) == 0:
+
+    raise ValueError(
+        "Pollution history is unavailable."
+    )
+
+
+latest_pm25 = pm25_history[-1]
+latest_pm10 = pm10_history[-1]
+
+
+# =========================================================
+# GENERATE 72-HOUR FORECAST
+# =========================================================
+
+predictions = []
+
+print("\nGenerating 72-hour EPA AQI forecast...")
+
+
+for hour_ahead in range(
+    1,
+    FORECAST_HOURS + 1
+):
+
+    future_time = (
+        latest_time
+        + timedelta(hours=hour_ahead)
+    )
+
+
+    # -----------------------------------------------------
+    # Start from latest known row
+    # -----------------------------------------------------
+
+    future_row = latest_row.copy()
+
+
+    # -----------------------------------------------------
+    # Update time features
+    # -----------------------------------------------------
+
+    future_row["datetime"] = future_time
+
+    future_row["hour"] = future_time.hour
+
+    future_row["day"] = future_time.day
+
+    future_row["month"] = future_time.month
+
+    future_row["day_of_week"] = (
+        future_time.dayofweek
+    )
+
+
+    # -----------------------------------------------------
+    # AQI lag features
+    # -----------------------------------------------------
+
+    future_row["aqi_lag_1"] = (
+        aqi_history[-1]
+    )
+
+    future_row["aqi_lag_3"] = (
+        aqi_history[-3]
+    )
+
+    future_row["aqi_lag_6"] = (
+        aqi_history[-6]
+    )
+
+    future_row["aqi_lag_12"] = (
+        aqi_history[-12]
+    )
+
+    future_row["aqi_lag_24"] = (
+        aqi_history[-24]
+    )
+
+    future_row["aqi_lag_48"] = (
+        aqi_history[-48]
+    )
+
+    future_row["aqi_lag_72"] = (
+        aqi_history[-72]
+    )
+
+
+    # -----------------------------------------------------
+    # Pollution lag features
+    # -----------------------------------------------------
+
+    future_row["pm2_5_lag_1"] = (
+        latest_pm25
+    )
+
+    future_row["pm10_lag_1"] = (
+        latest_pm10
+    )
+
+
+    # -----------------------------------------------------
+    # Rolling AQI features
+    # -----------------------------------------------------
+
+    future_row["aqi_rolling_6"] = (
+        sum(aqi_history[-6:])
+        / 6
+    )
+
+    future_row["aqi_rolling_24"] = (
+        sum(aqi_history[-24:])
+        / 24
+    )
+
+    future_row["aqi_rolling_72"] = (
+        sum(aqi_history[-72:])
+        / 72
+    )
+
+
+    # -----------------------------------------------------
+    # AQI change
+    # -----------------------------------------------------
+
+    future_row["aqi_change"] = (
+        aqi_history[-1]
+        - aqi_history[-2]
+    )
+
+
+    # -----------------------------------------------------
+    # Current AQI input
+    # -----------------------------------------------------
+
+    future_row["aqi"] = (
+        aqi_history[-1]
+    )
+
+
+    # -----------------------------------------------------
+    # Prepare model input
+    # -----------------------------------------------------
+
+    X_future = pd.DataFrame(
+        [future_row]
+    )[MODEL_FEATURES]
+
+
+    # -----------------------------------------------------
+    # Prediction
+    # -----------------------------------------------------
+
+    predicted_aqi = model.predict(
+        X_future
+    )[0]
+
+
+    # -----------------------------------------------------
+    # EPA AQI range
+    # -----------------------------------------------------
+    #
+    # IMPORTANT:
+    # This is EPA-style AQI: 0–500.
+    # DO NOT use the old 1–5 OpenWeather scale.
+    #
+
+    predicted_aqi = max(
+        0,
+        min(
+            500,
+            float(predicted_aqi)
+        )
+    )
+
+
+    predicted_aqi = round(
+        predicted_aqi,
+        1
+    )
+
+
+    # -----------------------------------------------------
+    # Save prediction
+    # -----------------------------------------------------
+
+    predictions.append({
+
+        "datetime": future_time,
+
+        "predicted_aqi": predicted_aqi,
+
+        "day": future_time.date()
+
+    })
+
+
+    # -----------------------------------------------------
+    # Add prediction to history
+    #
+    # This makes the next prediction recursive.
+    # -----------------------------------------------------
+
+    aqi_history.append(
+        predicted_aqi
+    )
+
+    aqi_history = aqi_history[-72:]
+
+
+# =========================================================
+# CREATE OUTPUT DATAFRAME
+# =========================================================
+
+prediction_df = pd.DataFrame(
+    predictions
+)
+
+
+# =========================================================
+# SAVE
+# =========================================================
+
+prediction_df.to_csv(
+    OUTPUT_FILE,
+    index=False
+)
+
+
+# =========================================================
+# SUMMARY
+# =========================================================
+
+print("\n" + "=" * 60)
+print("72-HOUR FORECAST GENERATED SUCCESSFULLY")
+print("=" * 60)
+
+print(
+    "\nForecast start:",
+    prediction_df["datetime"].iloc[0]
+)
+
+print(
+    "Forecast end:",
+    prediction_df["datetime"].iloc[-1]
+)
+
+print(
+    "Minimum predicted AQI:",
+    prediction_df["predicted_aqi"].min()
+)
+
+print(
+    "Maximum predicted AQI:",
+    prediction_df["predicted_aqi"].max()
+)
+
+print(
+    "Average predicted AQI:",
+    round(
+        prediction_df["predicted_aqi"].mean(),
+        1
+    )
+)
+
+print(
+    "\nFirst 10 predictions:"
+)
+
+print(
+    prediction_df.head(10).to_string(
+        index=False
+    )
+)
+
+print(
+    "\nLast 10 predictions:"
+)
+
+print(
+    prediction_df.tail(10).to_string(
+        index=False
+    )
+)
+
+print(
+    "\nPredictions saved as:",
+    OUTPUT_FILE
+)
+
+print("=" * 60)

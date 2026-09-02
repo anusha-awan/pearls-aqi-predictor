@@ -9,31 +9,15 @@ from sklearn.metrics import (
 
 
 # ==========================================================
-# LOAD TRAINING DATA
+# CONFIGURATION
 # ==========================================================
 
-print("=" * 60)
-print("AQI MODEL EVALUATION")
-print("=" * 60)
-
-print("\nLoading training data...")
-
-df = pd.read_csv("training_data.csv")
-
-df["datetime"] = pd.to_datetime(
-    df["datetime"]
-)
-
-df = (
-    df
-    .sort_values("datetime")
-    .reset_index(drop=True)
-)
-
-
 # ==========================================================
-# FEATURES
+# CONFIGURATION
 # ==========================================================
+
+DATA_FILE = "features.csv"
+MODEL_FILE = "aqi_model.pkl"
 
 MODEL_FEATURES = [
     "co",
@@ -66,56 +50,175 @@ MODEL_FEATURES = [
 
 
 # ==========================================================
+# START
+# ==========================================================
+
+print("=" * 60)
+print("PEARLS AQI MODEL EVALUATION")
+print("=" * 60)
+
+
+# ==========================================================
+# LOAD DATA
+# ==========================================================
+
+print("\nLoading training data...")
+
+df = pd.read_csv(DATA_FILE)
+
+df["datetime"] = pd.to_datetime(
+    df["datetime"],
+    utc=True,
+    errors="coerce"
+)
+
+df = (
+    df
+    .sort_values("datetime")
+    .reset_index(drop=True)
+)
+
+
+print("Rows loaded:", len(df))
+print("Columns:", len(df.columns))
+
+
+# ==========================================================
+# VALIDATE FEATURES
+# ==========================================================
+
+print("\nValidating model features...")
+
+missing_features = [
+    feature
+    for feature in MODEL_FEATURES
+    if feature not in df.columns
+]
+
+if missing_features:
+
+    raise ValueError(
+        "Missing model features:\n"
+        + "\n".join(missing_features)
+    )
+
+
+if "target_aqi" not in df.columns:
+
+    raise ValueError(
+        "target_aqi column not found."
+    )
+
+
+print("All 26 model features are available.")
+
+
+# ==========================================================
 # CLEAN DATA
 # ==========================================================
+
+print("\nCleaning evaluation dataset...")
+
+before = len(df)
 
 df = df.dropna(
     subset=MODEL_FEATURES + ["target_aqi"]
 ).reset_index(drop=True)
 
+after = len(df)
 
-print("Valid rows:", len(df))
+print(
+    "Rows removed because of missing values:",
+    before - after
+)
+
+print(
+    "Valid evaluation rows:",
+    after
+)
 
 
 # ==========================================================
 # CHRONOLOGICAL 80/20 SPLIT
 # ==========================================================
 
+print("\nCreating chronological 80/20 split...")
+
 split_index = int(len(df) * 0.8)
 
-train_df = df.iloc[:split_index]
-test_df = df.iloc[split_index:]
+train_df = df.iloc[:split_index].copy()
+test_df = df.iloc[split_index:].copy()
 
 
-print("Training rows:", len(train_df))
-print("Testing rows:", len(test_df))
-
-
-# ==========================================================
-# LOAD LOCAL RANDOM FOREST MODEL
-# ==========================================================
-
-print("\nLoading local Random Forest model...")
-
-model = joblib.load(
-    "aqi_model.pkl"
+print(
+    "Training rows:",
+    len(train_df)
 )
 
-print("Model loaded successfully!")
+print(
+    "Testing rows:",
+    len(test_df)
+)
+
+
+print(
+    "Training period:",
+    train_df["datetime"].min(),
+    "->",
+    train_df["datetime"].max()
+)
+
+print(
+    "Testing period:",
+    test_df["datetime"].min(),
+    "->",
+    test_df["datetime"].max()
+)
 
 
 # ==========================================================
-# RANDOM FOREST PREDICTIONS
+# LOAD MODEL
 # ==========================================================
 
-print("\nGenerating Random Forest test predictions...")
+print("\nLoading trained AQI model...")
 
-X_test = test_df[MODEL_FEATURES]
+model = joblib.load(
+    MODEL_FILE
+)
 
-y_test = test_df["target_aqi"]
+print(
+    "Model loaded successfully!"
+)
 
-rf_predictions = model.predict(
+print(
+    "Model type:",
+    type(model).__name__
+)
+
+
+# ==========================================================
+# GENERATE MODEL PREDICTIONS
+# ==========================================================
+
+print("\nGenerating model predictions...")
+
+X_test = test_df[
+    MODEL_FEATURES
+]
+
+y_test = test_df[
+    "target_aqi"
+]
+
+predictions = model.predict(
     X_test
+)
+
+
+# Keep predictions within valid EPA AQI range
+predictions = predictions.clip(
+    0,
+    500
 )
 
 
@@ -123,60 +226,64 @@ rf_predictions = model.predict(
 # PERSISTENCE BASELINE
 # ==========================================================
 
-print("Generating persistence baseline predictions...")
+print(
+    "Generating persistence baseline..."
+)
 
-# Persistence assumes the next-hour AQI
-# will be equal to the current AQI.
-
-persistence_predictions = (
+baseline_predictions = (
     test_df["aqi"]
     .values
 )
 
-
-# ==========================================================
-# RANDOM FOREST METRICS
-# ==========================================================
-
-rf_mae = mean_absolute_error(
-    y_test,
-    rf_predictions
+baseline_predictions = baseline_predictions.clip(
+    0,
+    500
 )
 
-rf_rmse = (
+
+# ==========================================================
+# MODEL METRICS
+# ==========================================================
+
+model_mae = mean_absolute_error(
+    y_test,
+    predictions
+)
+
+model_rmse = (
     mean_squared_error(
         y_test,
-        rf_predictions
+        predictions
     )
     ** 0.5
 )
 
-rf_r2 = r2_score(
+model_r2 = r2_score(
     y_test,
-    rf_predictions
+    predictions
 )
 
 
 # ==========================================================
-# PERSISTENCE METRICS
+# BASELINE METRICS
 # ==========================================================
 
-p_mae = mean_absolute_error(
+baseline_mae = mean_absolute_error(
     y_test,
-    persistence_predictions
+    baseline_predictions
 )
 
-p_rmse = (
+baseline_rmse = (
     mean_squared_error(
         y_test,
-        persistence_predictions
+        baseline_predictions
     )
     ** 0.5
 )
 
-p_r2 = r2_score(
+baseline_r2 = r2_score(
     y_test,
-    persistence_predictions
+    baseline_predictions
 )
 
 
@@ -185,30 +292,65 @@ p_r2 = r2_score(
 # ==========================================================
 
 print("\n" + "=" * 60)
-print("FINAL MODEL COMPARISON")
+print("FINAL MODEL EVALUATION")
 print("=" * 60)
 
-print("\nRandom Forest:")
+
+print("\nGradient Boosting Model:")
+
 print(
-    f"MAE  : {rf_mae:.2f} AQI points"
+    f"MAE  : {model_mae:.2f} AQI points"
 )
+
 print(
-    f"RMSE : {rf_rmse:.2f} AQI points"
+    f"RMSE : {model_rmse:.2f} AQI points"
 )
+
 print(
-    f"R²   : {rf_r2:.4f}"
+    f"R²   : {model_r2:.4f}"
 )
 
 
 print("\nPersistence Baseline:")
+
 print(
-    f"MAE  : {p_mae:.2f} AQI points"
+    f"MAE  : {baseline_mae:.2f} AQI points"
 )
+
 print(
-    f"RMSE : {p_rmse:.2f} AQI points"
+    f"RMSE : {baseline_rmse:.2f} AQI points"
 )
+
 print(
-    f"R²   : {p_r2:.4f}"
+    f"R²   : {baseline_r2:.4f}"
+)
+
+
+# ==========================================================
+# IMPROVEMENT
+# ==========================================================
+
+mae_improvement = (
+    (baseline_mae - model_mae)
+    / baseline_mae
+) * 100
+
+rmse_improvement = (
+    (baseline_rmse - model_rmse)
+    / baseline_rmse
+) * 100
+
+
+print("\n" + "=" * 60)
+print("MODEL IMPROVEMENT")
+print("=" * 60)
+
+print(
+    f"MAE improvement : {mae_improvement:.2f}%"
+)
+
+print(
+    f"RMSE improvement: {rmse_improvement:.2f}%"
 )
 
 
@@ -221,22 +363,85 @@ print("COMPARISON")
 print("=" * 60)
 
 
-if rf_mae < p_mae:
-    print("✅ Random Forest beats persistence on MAE.")
+if model_mae < baseline_mae:
+
+    print(
+        "PASS: Model beats persistence on MAE."
+    )
+
 else:
-    print("⚠️ Random Forest does not beat persistence on MAE.")
+
+    print(
+        "WARNING: Model does not beat persistence on MAE."
+    )
 
 
-if rf_rmse < p_rmse:
-    print("✅ Random Forest beats persistence on RMSE.")
+if model_rmse < baseline_rmse:
+
+    print(
+        "PASS: Model beats persistence on RMSE."
+    )
+
 else:
-    print("⚠️ Random Forest does not beat persistence on RMSE.")
+
+    print(
+        "WARNING: Model does not beat persistence on RMSE."
+    )
 
 
-if rf_r2 > p_r2:
-    print("✅ Random Forest beats persistence on R².")
+if model_r2 > baseline_r2:
+
+    print(
+        "PASS: Model beats persistence on R²."
+    )
+
 else:
-    print("⚠️ Random Forest does not beat persistence on R².")
+
+    print(
+        "WARNING: Model does not beat persistence on R²."
+    )
+
+
+# ==========================================================
+# SAVE EVALUATION RESULTS
+# ==========================================================
+
+results = pd.DataFrame({
+
+    "metric": [
+        "MAE",
+        "RMSE",
+        "R2"
+    ],
+
+    "gradient_boosting": [
+        model_mae,
+        model_rmse,
+        model_r2
+    ],
+
+    "persistence_baseline": [
+        baseline_mae,
+        baseline_rmse,
+        baseline_r2
+    ]
+
+})
+
+
+results.to_csv(
+    "model_evaluation_results.csv",
+    index=False
+)
+
+
+print(
+    "\nEvaluation results saved as:"
+)
+
+print(
+    "model_evaluation_results.csv"
+)
 
 
 print("\n" + "=" * 60)
