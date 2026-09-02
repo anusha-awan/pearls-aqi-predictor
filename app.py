@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import joblib
 import matplotlib.pyplot as plt
-import shap
 
 from datetime import timedelta
 
@@ -12,9 +11,10 @@ from datetime import timedelta
 # ==========================================================
 
 st.set_page_config(
-    page_title="Pearls AQI Predictor",
-    page_icon="🌍",
-    layout="wide"
+    page_title="Pearls AQI Predictor - Lahore",
+    page_icon="🌫️",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 
@@ -22,8 +22,10 @@ st.set_page_config(
 # CONSTANTS
 # ==========================================================
 
+CITY_NAME = "Lahore"
+COUNTRY_NAME = "Pakistan"
+
 FORECAST_HOURS = 72
-MODEL_VERSION = 2
 
 MODEL_FEATURES = [
     "co",
@@ -56,7 +58,65 @@ MODEL_FEATURES = [
 
 
 # ==========================================================
-# EPA AQI CALCULATION
+# SIDEBAR
+# ==========================================================
+
+with st.sidebar:
+
+    st.title("🌫️ Pearls AQI Predictor")
+
+    st.caption(
+        "10Pearls SHINE Internship · Data Sciences Track"
+    )
+
+    st.divider()
+
+    st.subheader("📍 Location")
+
+    st.write(
+        f"**{CITY_NAME}, {COUNTRY_NAME}**"
+    )
+
+    st.divider()
+
+    st.subheader("🌿 EPA AQI Scale")
+
+    st.write("0–50  🙂 Good")
+    st.write("51–100  😐 Moderate")
+    st.write("101–150  😷 Unhealthy for Sensitive Groups")
+    st.write("151–200  🚫 Unhealthy")
+    st.write("201–300  ☣️ Very Unhealthy")
+    st.write("301–500+  ☠️ Hazardous")
+
+    st.divider()
+
+    st.subheader("🤖 Model")
+
+    st.write("Forecast Horizon: **72 Hours**")
+    st.write("Input Features: **26**")
+
+    st.divider()
+
+    st.subheader("📚 Documentation")
+
+    st.markdown(
+        "[GitHub Repository]"
+        "(https://github.com/anusha-awan/pearls-aqi-predictor)"
+    )
+
+    st.markdown(
+        "[Final Report]"
+        "(https://github.com/anusha-awan/pearls-aqi-predictor/blob/main/Final_Report.md)"
+    )
+
+    st.markdown(
+        "[Build Journey & EDA]"
+        "(https://github.com/anusha-awan/pearls-aqi-predictor/blob/main/EDA_Writeup.md)"
+    )
+
+
+# ==========================================================
+# EPA PM2.5 AQI CALCULATION
 # ==========================================================
 
 def calculate_pm25_aqi(pm25):
@@ -64,33 +124,71 @@ def calculate_pm25_aqi(pm25):
     if pd.isna(pm25):
         return None
 
-    pm25 = float(pm25)
+    try:
+        pm25 = float(pm25)
+
+    except (ValueError, TypeError):
+        return None
 
     if pm25 < 0:
         return None
 
+    # EPA PM2.5 concentration is truncated
+    # to one decimal place before AQI calculation.
+
+    pm25 = int(pm25 * 10) / 10
+
     breakpoints = [
+
         (0.0, 9.0, 0, 50),
+
         (9.1, 35.4, 51, 100),
+
         (35.5, 55.4, 101, 150),
+
         (55.5, 125.4, 151, 200),
+
         (125.5, 225.4, 201, 300),
-        (225.5, 325.4, 301, 500),
+
+        (225.5, 325.4, 301, 500)
+
     ]
 
     if pm25 > 325.4:
-        pm25 = 325.4
+        return 500
 
-    for c_low, c_high, i_low, i_high in breakpoints:
+    for (
+        concentration_low,
+        concentration_high,
+        aqi_low,
+        aqi_high
+    ) in breakpoints:
 
-        if c_low <= pm25 <= c_high:
+        if (
+            concentration_low
+            <= pm25
+            <= concentration_high
+        ):
 
             aqi = (
-                (i_high - i_low)
-                / (c_high - c_low)
-            ) * (pm25 - c_low) + i_low
 
-            return round(aqi)
+                (
+                    aqi_high - aqi_low
+                )
+                /
+                (
+                    concentration_high
+                    - concentration_low
+                )
+
+            ) * (
+
+                pm25
+                - concentration_low
+
+            ) + aqi_low
+
+            return int(round(aqi))
 
     return None
 
@@ -121,44 +219,33 @@ def aqi_category(aqi):
 
 
 # ==========================================================
-# TITLE
-# ==========================================================
-
-st.title("🌍 Pearls AQI Predictor")
-
-st.subheader("3-Day Air Quality Index Forecast")
-
-st.write(
-    "AI-powered AQI forecasting using Machine Learning "
-    "with automated feature engineering."
-)
-
-
-# ==========================================================
 # LOAD MODEL
 # ==========================================================
 
 @st.cache_resource
 def load_model():
 
-    return joblib.load("aqi_model.pkl")
-
-
-try:
-
-    model = load_model()
-
-    st.success(
-        "✅ Random Forest model loaded successfully"
+    return joblib.load(
+        "aqi_model.pkl"
     )
 
-except Exception as e:
 
-    st.error(
-        f"Unable to load model: {e}"
-    )
+# ==========================================================
+# LOAD METADATA
+# ==========================================================
 
-    st.stop()
+@st.cache_resource
+def load_metadata():
+
+    try:
+
+        return joblib.load(
+            "model_metadata.pkl"
+        )
+
+    except Exception:
+
+        return {}
 
 
 # ==========================================================
@@ -168,19 +255,85 @@ except Exception as e:
 @st.cache_data
 def load_data():
 
-    df = pd.read_csv("features.csv")
+    df = pd.read_csv(
+        "features.csv"
+    )
 
     df["datetime"] = pd.to_datetime(
-        df["datetime"]
+        df["datetime"],
+        utc=True,
+        errors="coerce"
     )
 
     df = (
+
         df
-        .sort_values("datetime")
-        .reset_index(drop=True)
+
+        .dropna(
+            subset=["datetime"]
+        )
+
+        .sort_values(
+            "datetime"
+        )
+
+        .drop_duplicates(
+            subset=["datetime"],
+            keep="last"
+        )
+
+        .reset_index(
+            drop=True
+        )
+
     )
 
     return df
+
+
+# ==========================================================
+# PAGE HEADER
+# ==========================================================
+
+st.title(
+    "🌍 Pearls AQI Predictor"
+)
+
+st.subheader(
+    "3-Day Air Quality Index Forecast"
+)
+
+st.write(
+    f"AI-powered AQI forecasting for "
+    f"**{CITY_NAME}, {COUNTRY_NAME}** using "
+    "machine learning and automated feature engineering."
+)
+
+
+# ==========================================================
+# LOAD FILES
+# ==========================================================
+
+try:
+
+    model = load_model()
+
+except Exception as e:
+
+    st.error(
+        f"Unable to load aqi_model.pkl: {e}"
+    )
+
+    st.stop()
+
+
+try:
+
+    metadata = load_metadata()
+
+except Exception:
+
+    metadata = {}
 
 
 try:
@@ -197,41 +350,165 @@ except Exception as e:
 
 
 # ==========================================================
+# MODEL METADATA
+# ==========================================================
+
+model_name = metadata.get(
+    "model_name",
+    metadata.get(
+        "model",
+        "Gradient Boosting"
+    )
+)
+
+model_version = metadata.get(
+    "model_version",
+    1
+)
+
+mae = metadata.get(
+    "mae",
+    None
+)
+
+rmse = metadata.get(
+    "rmse",
+    None
+)
+
+r2 = metadata.get(
+    "r2",
+    None
+)
+
+
+# ==========================================================
+# VALIDATE MODEL FEATURES
+# ==========================================================
+
+actual_features = getattr(
+    model,
+    "n_features_in_",
+    None
+)
+
+expected_features = len(
+    MODEL_FEATURES
+)
+
+if actual_features is not None:
+
+    if actual_features != expected_features:
+
+        st.error(
+
+            f"Model expects {actual_features} features, "
+            f"but the dashboard provides "
+            f"{expected_features} features."
+
+        )
+
+        st.stop()
+
+
+missing_features = [
+
+    feature
+
+    for feature in MODEL_FEATURES
+
+    if feature not in df.columns
+
+]
+
+if missing_features:
+
+    st.error(
+
+        "Missing model features:\n"
+        + "\n".join(missing_features)
+
+    )
+
+    st.stop()
+
+
+# ==========================================================
 # TIME FEATURES
 # ==========================================================
 
-df["hour"] = df["datetime"].dt.hour
-df["day"] = df["datetime"].dt.day
-df["month"] = df["datetime"].dt.month
-df["day_of_week"] = df["datetime"].dt.dayofweek
+df["hour"] = (
+    df["datetime"].dt.hour
+)
+
+df["day"] = (
+    df["datetime"].dt.day
+)
+
+df["month"] = (
+    df["datetime"].dt.month
+)
+
+df["day_of_week"] = (
+    df["datetime"].dt.dayofweek
+)
 
 
 # ==========================================================
-# CURRENT DATA
+# CURRENT OBSERVATION
 # ==========================================================
 
-latest = df.iloc[-1]
+latest = df.iloc[-1].copy()
 
 latest_time = latest["datetime"]
 
-current_pm25 = latest["pm2_5"]
-
-# IMPORTANT:
-# Do NOT use OpenWeather 1-5 AQI as the displayed AQI.
-# Calculate actual EPA-style AQI from PM2.5.
+current_pm25 = float(
+    latest["pm2_5"]
+)
 
 current_aqi = calculate_pm25_aqi(
     current_pm25
 )
+
+if current_aqi is None:
+
+    st.error(
+        "Unable to calculate current EPA AQI."
+    )
+
+    st.stop()
+
+
+# ==========================================================
+# LOCATION
+# ==========================================================
+
+st.divider()
+
+location_col1, location_col2 = st.columns(2)
+
+with location_col1:
+
+    st.metric(
+        "📍 City",
+        CITY_NAME
+    )
+
+with location_col2:
+
+    st.metric(
+        "🌎 Country",
+        COUNTRY_NAME
+    )
 
 
 # ==========================================================
 # CURRENT AIR QUALITY
 # ==========================================================
 
-st.divider()
-
-st.header("📍 Current Air Quality")
+st.header(
+    "📍 Current Air Quality"
+)
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -259,7 +536,7 @@ with col3:
 with col4:
 
     st.metric(
-        "Latest Data",
+        "Latest Observation",
         latest_time.strftime(
             "%Y-%m-%d %H:%M"
         )
@@ -272,80 +549,387 @@ with col4:
 
 st.divider()
 
-st.header("🔮 Next 3 Days AQI Forecast")
+st.header(
+    "🔮 Next 3 Days AQI Forecast"
+)
 
 st.write(
-    "The Random Forest model generates hourly AQI predictions "
+    "The trained machine learning model generates "
+    "recursive hourly EPA-style AQI predictions "
     "for the next 72 hours."
 )
 
 
+# ==========================================================
+# HISTORICAL AQI
+# ==========================================================
+
+historical_aqi = (
+
+    df["aqi"]
+
+    .dropna()
+
+    .astype(float)
+
+    .tolist()
+
+)
+
+if len(historical_aqi) == 0:
+
+    st.error(
+        "No historical AQI values are available."
+    )
+
+    st.stop()
+
+
+# Synchronize latest historical AQI
+# with current EPA AQI.
+
+historical_aqi[-1] = float(
+    current_aqi
+)
+
+
+# ==========================================================
+# FORECAST
+# ==========================================================
+
 predictions = []
 
-latest_row = latest.copy()
 
-
-for i in range(1, FORECAST_HOURS + 1):
+for step in range(
+    1,
+    FORECAST_HOURS + 1
+):
 
     future_time = (
+
         latest_time
-        + timedelta(hours=i)
-    )
 
-    future_row = latest_row.copy()
-
-    future_row["datetime"] = future_time
-
-    future_row["hour"] = future_time.hour
-    future_row["day"] = future_time.day
-    future_row["month"] = future_time.month
-    future_row["day_of_week"] = (
-        future_time.dayofweek
-    )
-
-    # Ensure all required features exist
-    missing_features = [
-        feature
-        for feature in MODEL_FEATURES
-        if feature not in future_row.index
-    ]
-
-    if missing_features:
-
-        st.error(
-            "Missing model features: "
-            + ", ".join(missing_features)
+        + timedelta(
+            hours=step
         )
 
-        st.stop()
+    )
+
+
+    # ------------------------------------------------------
+    # AQI LAG FEATURES
+    # ------------------------------------------------------
+
+    aqi_lag_1 = (
+        historical_aqi[-1]
+    )
+
+    aqi_lag_3 = (
+
+        historical_aqi[-3]
+
+        if len(historical_aqi) >= 3
+
+        else historical_aqi[0]
+
+    )
+
+    aqi_lag_6 = (
+
+        historical_aqi[-6]
+
+        if len(historical_aqi) >= 6
+
+        else historical_aqi[0]
+
+    )
+
+    aqi_lag_12 = (
+
+        historical_aqi[-12]
+
+        if len(historical_aqi) >= 12
+
+        else historical_aqi[0]
+
+    )
+
+    aqi_lag_24 = (
+
+        historical_aqi[-24]
+
+        if len(historical_aqi) >= 24
+
+        else historical_aqi[0]
+
+    )
+
+    aqi_lag_48 = (
+
+        historical_aqi[-48]
+
+        if len(historical_aqi) >= 48
+
+        else historical_aqi[0]
+
+    )
+
+    aqi_lag_72 = (
+
+        historical_aqi[-72]
+
+        if len(historical_aqi) >= 72
+
+        else historical_aqi[0]
+
+    )
+
+
+    # ------------------------------------------------------
+    # ROLLING FEATURES
+    # ------------------------------------------------------
+
+    rolling_6_values = (
+        historical_aqi[-6:]
+    )
+
+    rolling_24_values = (
+        historical_aqi[-24:]
+    )
+
+    rolling_72_values = (
+        historical_aqi[-72:]
+    )
+
+
+    aqi_rolling_6 = (
+
+        sum(rolling_6_values)
+        /
+        len(rolling_6_values)
+
+    )
+
+    aqi_rolling_24 = (
+
+        sum(rolling_24_values)
+        /
+        len(rolling_24_values)
+
+    )
+
+    aqi_rolling_72 = (
+
+        sum(rolling_72_values)
+        /
+        len(rolling_72_values)
+
+    )
+
+
+    # ------------------------------------------------------
+    # AQI CHANGE
+    # ------------------------------------------------------
+
+    previous_aqi = (
+
+        historical_aqi[-2]
+
+        if len(historical_aqi) >= 2
+
+        else aqi_lag_1
+
+    )
+
+    aqi_change = (
+
+        aqi_lag_1
+        -
+        previous_aqi
+
+    )
+
+
+    # ------------------------------------------------------
+    # FUTURE POLLUTANT BASELINE
+    # ------------------------------------------------------
+
+    future_co = float(
+        latest["co"]
+    )
+
+    future_no = float(
+        latest["no"]
+    )
+
+    future_no2 = float(
+        latest["no2"]
+    )
+
+    future_o3 = float(
+        latest["o3"]
+    )
+
+    future_so2 = float(
+        latest["so2"]
+    )
+
+    future_pm25 = float(
+        latest["pm2_5"]
+    )
+
+    future_pm10 = float(
+        latest["pm10"]
+    )
+
+    future_nh3 = float(
+        latest["nh3"]
+    )
+
+
+    # ------------------------------------------------------
+    # FUTURE FEATURE ROW
+    # ------------------------------------------------------
+
+    future_features = {
+
+        "co":
+            future_co,
+
+        "no":
+            future_no,
+
+        "no2":
+            future_no2,
+
+        "o3":
+            future_o3,
+
+        "so2":
+            future_so2,
+
+        "pm2_5":
+            future_pm25,
+
+        "pm10":
+            future_pm10,
+
+        "nh3":
+            future_nh3,
+
+        "hour":
+            future_time.hour,
+
+        "day":
+            future_time.day,
+
+        "month":
+            future_time.month,
+
+        "day_of_week":
+            future_time.dayofweek,
+
+        "aqi":
+            aqi_lag_1,
+
+        "aqi_lag_1":
+            aqi_lag_1,
+
+        "aqi_lag_3":
+            aqi_lag_3,
+
+        "aqi_lag_6":
+            aqi_lag_6,
+
+        "aqi_lag_12":
+            aqi_lag_12,
+
+        "aqi_lag_24":
+            aqi_lag_24,
+
+        "aqi_lag_48":
+            aqi_lag_48,
+
+        "aqi_lag_72":
+            aqi_lag_72,
+
+        "pm2_5_lag_1":
+            future_pm25,
+
+        "pm10_lag_1":
+            future_pm10,
+
+        "aqi_rolling_6":
+            aqi_rolling_6,
+
+        "aqi_rolling_24":
+            aqi_rolling_24,
+
+        "aqi_rolling_72":
+            aqi_rolling_72,
+
+        "aqi_change":
+            aqi_change
+
+    }
+
+
+    # ------------------------------------------------------
+    # MODEL INPUT
+    # ------------------------------------------------------
 
     X_future = pd.DataFrame(
-        [future_row]
+        [future_features]
     )[MODEL_FEATURES]
+
+
+    # ------------------------------------------------------
+    # PREDICTION
+    # ------------------------------------------------------
 
     predicted_aqi = model.predict(
         X_future
     )[0]
 
+
     predicted_aqi = max(
         0,
         min(
             500,
-            predicted_aqi
+            float(predicted_aqi)
         )
     )
 
+
+    predicted_aqi = round(
+        predicted_aqi,
+        1
+    )
+
+
+    # ------------------------------------------------------
+    # RECURSIVE UPDATE
+    # ------------------------------------------------------
+
+    historical_aqi.append(
+        predicted_aqi
+    )
+
+
     predictions.append({
 
-        "datetime": future_time,
+        "datetime":
+            future_time,
 
-        "predicted_aqi": round(
-            predicted_aqi,
-            1
-        )
+        "predicted_aqi":
+            predicted_aqi
 
     })
 
+
+# ==========================================================
+# FORECAST DATAFRAME
+# ==========================================================
 
 forecast_df = pd.DataFrame(
     predictions
@@ -355,6 +939,10 @@ forecast_df = pd.DataFrame(
 # ==========================================================
 # FORECAST CHART
 # ==========================================================
+
+st.subheader(
+    "📈 72-Hour Predicted AQI"
+)
 
 fig, ax = plt.subplots(
     figsize=(12, 5)
@@ -371,7 +959,7 @@ ax.set_title(
 )
 
 ax.set_xlabel(
-    "Date and Time"
+    "Forecast Hour"
 )
 
 ax.set_ylabel(
@@ -389,145 +977,238 @@ plt.xticks(
 
 plt.tight_layout()
 
-st.pyplot(fig)
+st.pyplot(
+    fig
+)
+
+plt.close(
+    fig
+)
+
+
 # ==========================================================
-# KEY FORECAST OUTPUTS — 24 / 48 / 72 HOURS
+# KEY FORECAST OUTPUTS
 # ==========================================================
 
-st.subheader("📌 Key Forecast Predictions")
+st.subheader(
+    "📌 Key Forecast Predictions"
+)
 
-# Get the predictions corresponding to +24h, +48h and +72h
-day1_aqi = forecast_df.iloc[23]["predicted_aqi"]
-day2_aqi = forecast_df.iloc[47]["predicted_aqi"]
-day3_aqi = forecast_df.iloc[71]["predicted_aqi"]
+day1 = forecast_df.iloc[23]
 
-day1_time = forecast_df.iloc[23]["datetime"]
-day2_time = forecast_df.iloc[47]["datetime"]
-day3_time = forecast_df.iloc[71]["datetime"]
+day2 = forecast_df.iloc[47]
 
-forecast_col1, forecast_col2, forecast_col3 = st.columns(3)
+day3 = forecast_df.iloc[71]
+
+
+forecast_col1, forecast_col2, forecast_col3 = (
+    st.columns(3)
+)
+
 
 with forecast_col1:
 
     st.metric(
-        "Day +1 (24 Hours)",
-        f"{day1_aqi:.1f} AQI"
+        "Day 1",
+        f"{day1['predicted_aqi']:.1f} AQI"
     )
 
     st.caption(
-        day1_time.strftime("%Y-%m-%d %H:%M")
+        "24-hour forecast"
     )
+
 
 with forecast_col2:
 
     st.metric(
-        "Day +2 (48 Hours)",
-        f"{day2_aqi:.1f} AQI"
+        "Day 2",
+        f"{day2['predicted_aqi']:.1f} AQI"
     )
 
     st.caption(
-        day2_time.strftime("%Y-%m-%d %H:%M")
+        "48-hour forecast"
     )
+
 
 with forecast_col3:
 
     st.metric(
-        "Day +3 (72 Hours)",
-        f"{day3_aqi:.1f} AQI"
+        "Day 3",
+        f"{day3['predicted_aqi']:.1f} AQI"
     )
 
     st.caption(
-        day3_time.strftime("%Y-%m-%d %H:%M")
+        "72-hour forecast"
     )
+
 
 # ==========================================================
 # DAILY FORECAST
 # ==========================================================
 
-st.subheader(
-    "📅 Daily Forecast Summary"
-)
+forecast_df["forecast_day"] = [
 
-forecast_df["date"] = (
-    forecast_df["datetime"]
-    .dt.date
-)
+    "Day 1"
+
+    if i < 24
+
+    else "Day 2"
+
+    if i < 48
+
+    else "Day 3"
+
+    for i in range(
+        len(forecast_df)
+    )
+
+]
+
 
 daily_forecast = (
+
     forecast_df
-    .groupby("date")
-    ["predicted_aqi"]
+
+    .groupby(
+        "forecast_day",
+        sort=False
+    )["predicted_aqi"]
+
     .agg(
+
         [
             ("Minimum AQI", "min"),
+
             ("Average AQI", "mean"),
+
             ("Maximum AQI", "max")
+
         ]
+
     )
+
     .reset_index()
+
 )
 
-daily_forecast["Average AQI"] = (
-    daily_forecast["Average AQI"].round(1)
+
+daily_forecast[
+    "Minimum AQI"
+] = (
+
+    daily_forecast[
+        "Minimum AQI"
+    ].round(1)
+
 )
 
-daily_forecast["Minimum AQI"] = (
-    daily_forecast["Minimum AQI"].round(1)
+
+daily_forecast[
+    "Average AQI"
+] = (
+
+    daily_forecast[
+        "Average AQI"
+    ].round(1)
+
 )
 
-daily_forecast["Maximum AQI"] = (
-    daily_forecast["Maximum AQI"].round(1)
+
+daily_forecast[
+    "Maximum AQI"
+] = (
+
+    daily_forecast[
+        "Maximum AQI"
+    ].round(1)
+
 )
 
-st.dataframe(
-    daily_forecast,
-    use_container_width=True,
-    hide_index=True
-)
+
+# ==========================================================
+# DAILY FORECAST EXPANDER
+# ==========================================================
+
+with st.expander(
+    "📅 Daily Forecast Summary",
+    expanded=False
+):
+
+    st.write(
+        "A summary of the predicted AQI range for each "
+        "of the next three days."
+    )
+
+    st.dataframe(
+        daily_forecast,
+        use_container_width=True,
+        hide_index=True
+    )
 
 
 # ==========================================================
 # FORECAST ALERT
 # ==========================================================
 
-forecast_max = forecast_df[
-    "predicted_aqi"
-].max()
+forecast_max = (
+
+    forecast_df[
+        "predicted_aqi"
+    ].max()
+
+)
 
 
 if forecast_max > 300:
 
     st.error(
+
         f"🚨 Hazardous AQI levels may occur. "
-        f"Maximum predicted AQI: {forecast_max:.1f}"
+        f"Maximum predicted AQI: "
+        f"{forecast_max:.1f}"
+
     )
 
 elif forecast_max > 200:
 
     st.warning(
+
         f"⚠️ Very unhealthy AQI levels may occur. "
-        f"Maximum predicted AQI: {forecast_max:.1f}"
+        f"Maximum predicted AQI: "
+        f"{forecast_max:.1f}"
+
     )
 
 elif forecast_max > 150:
 
     st.warning(
+
         f"⚠️ Unhealthy AQI levels may occur. "
-        f"Maximum predicted AQI: {forecast_max:.1f}"
+        f"Maximum predicted AQI: "
+        f"{forecast_max:.1f}"
+
     )
 
 elif forecast_max > 100:
 
     st.warning(
-        f"⚠️ Unhealthy for sensitive groups AQI levels "
-        f"may occur. Maximum predicted AQI: {forecast_max:.1f}"
+
+        f"⚠️ Unhealthy for sensitive groups "
+        f"levels may occur. "
+        f"Maximum predicted AQI: "
+        f"{forecast_max:.1f}"
+
     )
 
 else:
 
     st.success(
-        f"✅ Air quality is expected to remain relatively good. "
-        f"Maximum predicted AQI: {forecast_max:.1f}"
+
+        f"✅ Air quality is expected to remain "
+        f"relatively good. "
+        f"Maximum predicted AQI: "
+        f"{forecast_max:.1f}"
+
     )
 
 
@@ -537,327 +1218,500 @@ else:
 
 st.divider()
 
-st.header("📊 Model Performance")
 
-metric1, metric2, metric3 = st.columns(3)
+with st.expander(
+    "📊 Model Performance",
+    expanded=False
+):
 
-with metric1:
-
-    st.metric(
-        "MAE",
-        "3.72 AQI points"
+    st.write(
+        "Performance metrics calculated during model evaluation."
     )
 
-with metric2:
-
-    st.metric(
-        "RMSE",
-        "6.58 AQI points"
+    metric1, metric2, metric3 = (
+        st.columns(3)
     )
 
-with metric3:
 
-    st.metric(
-        "R²",
-        "0.9483"
+    with metric1:
+
+        st.metric(
+            "MAE",
+            f"{float(mae):.2f} AQI points"
+            if mae is not None
+            else "N/A"
+        )
+
+
+    with metric2:
+
+        st.metric(
+            "RMSE",
+            f"{float(rmse):.2f} AQI points"
+            if rmse is not None
+            else "N/A"
+        )
+
+
+    with metric3:
+
+        st.metric(
+            "R²",
+            f"{float(r2):.4f}"
+            if r2 is not None
+            else "N/A"
+        )
+
+
+    st.caption(
+        "Evaluation uses a chronological 80/20 "
+        "train-test split on EPA-style AQI values."
     )
 
-st.caption(
-    "Evaluation performed using a chronological 80/20 "
-    "train-test split on actual EPA-style AQI values."
-)
 
 # ==========================================================
-# MODEL EXPLAINABILITY — SHAP
+# SHAP EXPLAINABILITY
 # ==========================================================
 
 st.divider()
 
-st.header("🤖 Model Explainability — SHAP")
 
-st.write(
-    "SHAP (SHapley Additive exPlanations) shows how each input "
-    "feature contributes to the model's AQI prediction. "
-    "Larger absolute SHAP values indicate a stronger influence "
-    "on the prediction."
-)
-
-
-# ----------------------------------------------------------
-# PREPARE SHAP DATA
-# ----------------------------------------------------------
-
-try:
-
-    # Use only the model input features
-    X_shap = df[MODEL_FEATURES].dropna().copy()
-
-    # Keep the computation lightweight while preserving
-    # a representative sample of the available data.
-    shap_sample_size = min(300, len(X_shap))
-
-    X_shap_sample = (
-        X_shap
-        .sample(
-            n=shap_sample_size,
-            random_state=42
-        )
-        .reset_index(drop=True)
-    )
-
-
-    # ------------------------------------------------------
-    # CREATE SHAP EXPLAINER
-    # ------------------------------------------------------
-
-    explainer = shap.TreeExplainer(model)
-
-    shap_values = explainer.shap_values(
-        X_shap_sample
-    )
-
-
-    # ------------------------------------------------------
-    # HANDLE SHAP OUTPUT
-    # ------------------------------------------------------
-
-    if isinstance(shap_values, list):
-
-        shap_values_plot = shap_values[0]
-
-    else:
-
-        shap_values_plot = shap_values
-
-
-    # ------------------------------------------------------
-    # GLOBAL SHAP IMPORTANCE
-    # ------------------------------------------------------
-
-    mean_abs_shap = (
-        abs(shap_values_plot)
-        .mean(axis=0)
-    )
-
-
-    shap_importance = pd.DataFrame({
-
-        "Feature": MODEL_FEATURES,
-
-        "Mean |SHAP Value|": mean_abs_shap
-
-    })
-
-
-    shap_importance = (
-        shap_importance
-        .sort_values(
-            "Mean |SHAP Value|",
-            ascending=False
-        )
-        .reset_index(
-            drop=True
-        )
-    )
-
-
-    # ------------------------------------------------------
-    # DISPLAY TOP FEATURES
-    # ------------------------------------------------------
-
-    st.subheader(
-        "📊 Global Feature Impact"
-    )
-
-    st.caption(
-        "Average absolute SHAP value across a representative "
-        f"sample of {shap_sample_size} observations."
-    )
-
-
-    st.dataframe(
-        shap_importance,
-        use_container_width=True,
-        hide_index=True
-    )
-
-
-    # ------------------------------------------------------
-    # SHAP BAR CHART
-    # ------------------------------------------------------
-
-    fig_shap, ax_shap = plt.subplots(
-        figsize=(10, 8)
-    )
-
-
-    top_shap = (
-        shap_importance
-        .head(15)
-        .sort_values(
-            "Mean |SHAP Value|",
-            ascending=True
-        )
-    )
-
-
-    ax_shap.barh(
-        top_shap["Feature"],
-        top_shap["Mean |SHAP Value|"]
-    )
-
-
-    ax_shap.set_title(
-        "Top 15 Features by Mean Absolute SHAP Value"
-    )
-
-    ax_shap.set_xlabel(
-        "Mean Absolute SHAP Value"
-    )
-
-    plt.tight_layout()
-
-    st.pyplot(
-        fig_shap
-    )
-
-
-    # ------------------------------------------------------
-    # LOCAL EXPLANATION
-    # ------------------------------------------------------
-
-    st.subheader(
-        "🔍 Individual Prediction Explanation"
-    )
+with st.expander(
+    "🤖 Model Explainability — SHAP",
+    expanded=False
+):
 
     st.write(
-        "The chart below explains one representative AQI "
-        "prediction and shows which features pushed the "
-        "prediction higher or lower."
+        "SHAP (SHapley Additive exPlanations) "
+        "shows how model input features influence "
+        "AQI predictions."
     )
 
 
-    explanation_index = 0
+    try:
 
-    explanation_features = (
-        X_shap_sample
-        .iloc[
-            explanation_index
-        ]
-    )
+        import shap
 
 
-    explanation_values = (
-        shap_values_plot[
-            explanation_index
-        ]
-    )
+        X_shap = (
 
+            df[
+                MODEL_FEATURES
+            ]
 
-    local_explanation = pd.DataFrame({
+            .dropna()
 
-        "Feature": MODEL_FEATURES,
+            .copy()
 
-        "SHAP Value": explanation_values,
-
-        "Feature Value": (
-            explanation_features.values
         )
 
-    })
+
+        if len(X_shap) > 0:
+
+            shap_sample_size = min(
+                300,
+                len(X_shap)
+            )
 
 
-    local_explanation[
-        "Absolute SHAP"
-    ] = abs(
-        local_explanation[
-            "SHAP Value"
-        ]
-    )
+            X_shap_sample = (
+
+                X_shap
+
+                .sample(
+                    n=shap_sample_size,
+                    random_state=42
+                )
+
+                .reset_index(
+                    drop=True
+                )
+
+            )
 
 
-    local_explanation = (
-        local_explanation
-        .sort_values(
-            "Absolute SHAP",
-            ascending=False
+            explainer = shap.TreeExplainer(
+                model
+            )
+
+
+            shap_values = (
+
+                explainer.shap_values(
+                    X_shap_sample
+                )
+
+            )
+
+
+            if isinstance(
+                shap_values,
+                list
+            ):
+
+                shap_values_plot = (
+                    shap_values[0]
+                )
+
+            else:
+
+                shap_values_plot = (
+                    shap_values
+                )
+
+
+            shap_values_plot = (
+
+                pd.DataFrame(
+
+                    shap_values_plot,
+
+                    columns=MODEL_FEATURES
+
+                )
+
+                .astype(float)
+
+                .values
+
+            )
+
+
+            # --------------------------------------------------
+            # GLOBAL SHAP IMPORTANCE
+            # --------------------------------------------------
+
+            mean_abs_shap = (
+
+                abs(
+                    shap_values_plot
+                )
+
+                .mean(
+                    axis=0
+                )
+
+            )
+
+
+            shap_importance = pd.DataFrame({
+
+                "Feature":
+                    MODEL_FEATURES,
+
+                "Mean |SHAP Value|":
+                    mean_abs_shap
+
+            })
+
+
+            shap_importance = (
+
+                shap_importance
+
+                .sort_values(
+
+                    "Mean |SHAP Value|",
+
+                    ascending=False
+
+                )
+
+                .reset_index(
+                    drop=True
+                )
+
+            )
+
+
+            st.subheader(
+                "📊 Global Feature Impact"
+            )
+
+
+            st.caption(
+
+                "Average absolute SHAP influence "
+                f"across {shap_sample_size} observations."
+
+            )
+
+
+            st.dataframe(
+
+                shap_importance,
+
+                use_container_width=True,
+
+                hide_index=True
+
+            )
+
+
+            # --------------------------------------------------
+            # TOP SHAP CHART
+            # --------------------------------------------------
+
+            top_shap = (
+
+                shap_importance
+
+                .head(15)
+
+                .sort_values(
+
+                    "Mean |SHAP Value|",
+
+                    ascending=True
+
+                )
+
+            )
+
+
+            fig_shap, ax_shap = plt.subplots(
+
+                figsize=(10, 8)
+
+            )
+
+
+            ax_shap.barh(
+
+                top_shap["Feature"],
+
+                top_shap[
+                    "Mean |SHAP Value|"
+                ]
+
+            )
+
+
+            ax_shap.set_title(
+
+                "Top 15 Features by Mean Absolute SHAP Value"
+
+            )
+
+
+            ax_shap.set_xlabel(
+
+                "Mean Absolute SHAP Value"
+
+            )
+
+
+            plt.tight_layout()
+
+
+            st.pyplot(
+                fig_shap
+            )
+
+
+            plt.close(
+                fig_shap
+            )
+
+
+            # --------------------------------------------------
+            # LOCAL EXPLANATION
+            # --------------------------------------------------
+
+            st.subheader(
+                "🔍 Individual Prediction Explanation"
+            )
+
+
+            st.write(
+                "The following explanation shows the "
+                "strongest feature contributions for "
+                "one representative observation."
+            )
+
+
+            explanation_index = 0
+
+
+            explanation_features = (
+
+                X_shap_sample
+
+                .iloc[
+                    explanation_index
+                ]
+
+            )
+
+
+            explanation_values = (
+
+                shap_values_plot[
+                    explanation_index
+                ]
+
+            )
+
+
+            local_explanation = pd.DataFrame({
+
+                "Feature":
+                    MODEL_FEATURES,
+
+                "SHAP Value":
+                    explanation_values,
+
+                "Feature Value":
+                    explanation_features.values
+
+            })
+
+
+            local_explanation[
+                "Absolute SHAP"
+            ] = (
+
+                abs(
+
+                    local_explanation[
+                        "SHAP Value"
+                    ]
+
+                )
+
+            )
+
+
+            local_explanation = (
+
+                local_explanation
+
+                .sort_values(
+
+                    "Absolute SHAP",
+
+                    ascending=False
+
+                )
+
+                .head(10)
+
+                .sort_values(
+
+                    "SHAP Value"
+
+                )
+
+                .reset_index(
+                    drop=True
+                )
+
+            )
+
+
+            fig_local, ax_local = plt.subplots(
+
+                figsize=(10, 6)
+
+            )
+
+
+            ax_local.barh(
+
+                local_explanation[
+                    "Feature"
+                ],
+
+                local_explanation[
+                    "SHAP Value"
+                ]
+
+            )
+
+
+            ax_local.axvline(
+                0,
+                linewidth=1
+            )
+
+
+            ax_local.set_title(
+
+                "SHAP Explanation for One AQI Prediction"
+
+            )
+
+
+            ax_local.set_xlabel(
+                "SHAP Value"
+            )
+
+
+            ax_local.set_ylabel(
+                "Feature"
+            )
+
+
+            plt.tight_layout()
+
+
+            st.pyplot(
+                fig_local
+            )
+
+
+            plt.close(
+                fig_local
+            )
+
+
+            # --------------------------------------------------
+            # STRONGEST FEATURE
+            # --------------------------------------------------
+
+            strongest_feature = (
+
+                shap_importance.iloc[0][
+                    "Feature"
+                ]
+
+            )
+
+
+            strongest_value = (
+
+                shap_importance.iloc[0][
+                    "Mean |SHAP Value|"
+                ]
+
+            )
+
+
+            st.info(
+
+                f"💡 The feature with the strongest "
+                f"overall SHAP influence is "
+                f"**{strongest_feature}**, with a mean "
+                f"absolute SHAP value of "
+                f"**{strongest_value:.4f}**."
+
+            )
+
+
+        else:
+
+            st.warning(
+                "No valid observations are available for SHAP analysis."
+            )
+
+
+    except Exception as e:
+
+        st.warning(
+            "SHAP explainability could not be generated. "
+            "The forecasting model can still operate normally."
         )
-        .head(10)
-        .sort_values(
-            "SHAP Value"
-        )
-        .reset_index(
-            drop=True
-        )
-    )
 
-
-    fig_local, ax_local = plt.subplots(
-        figsize=(10, 6)
-    )
-
-
-    ax_local.barh(
-        local_explanation["Feature"],
-        local_explanation["SHAP Value"]
-    )
-
-
-    ax_local.axvline(
-        0,
-        linewidth=1
-    )
-
-
-    ax_local.set_title(
-        "SHAP Explanation for One AQI Prediction"
-    )
-
-    ax_local.set_xlabel(
-        "SHAP Value"
-    )
-
-    ax_local.set_ylabel(
-        "Feature"
-    )
-
-    plt.tight_layout()
-
-    st.pyplot(
-        fig_local
-    )
-
-
-    # ------------------------------------------------------
-    # INTERPRETATION
-    # ------------------------------------------------------
-
-    strongest_feature = (
-        shap_importance.iloc[0]["Feature"]
-    )
-
-    strongest_value = (
-        shap_importance.iloc[0]["Mean |SHAP Value|"]
-    )
-
-
-    st.info(
-        f"💡 The feature with the strongest overall "
-        f"SHAP influence in the sampled data is "
-        f"**{strongest_feature}**, with a mean absolute "
-        f"SHAP value of **{strongest_value:.4f}**."
-    )
-
-
-except Exception as e:
-
-    st.warning(
-        "SHAP explainability could not be generated."
-    )
-
-    st.code(
-        str(e)
-    )
 
 # ==========================================================
 # MODEL INFORMATION
@@ -865,37 +1719,52 @@ except Exception as e:
 
 st.divider()
 
-st.header("🧠 Model Information")
 
-info1, info2, info3, info4 = st.columns(4)
+with st.expander(
+    "🧠 Model Information",
+    expanded=False
+):
 
-with info1:
-
-    st.metric(
-        "Model",
-        "Random Forest"
+    st.write(
+        "Technical information about the trained forecasting model."
     )
 
-with info2:
 
-    st.metric(
-        "Input Features",
-        len(MODEL_FEATURES)
+    info1, info2, info3, info4 = (
+        st.columns(4)
     )
 
-with info3:
 
-    st.metric(
-        "Forecast Horizon",
-        "72 Hours"
-    )
+    with info1:
 
-with info4:
+        st.metric(
+            "Model",
+            str(model_name)
+        )
 
-    st.metric(
-        "Model Version",
-        MODEL_VERSION
-    )
+
+    with info2:
+
+        st.metric(
+            "Input Features",
+            len(MODEL_FEATURES)
+        )
+
+
+    with info3:
+
+        st.metric(
+            "Forecast Horizon",
+            "72 Hours"
+        )
+
+
+    with info4:
+
+        st.metric(
+            "Model Version",
+            str(model_version)
+        )
 
 
 # ==========================================================
@@ -904,54 +1773,75 @@ with info4:
 
 st.divider()
 
-st.header("📊 Data Information")
 
-data1, data2, data3 = st.columns(3)
+with st.expander(
+    "📊 Data Information",
+    expanded=False
+):
 
-with data1:
-
-    st.metric(
-        "Available Records",
-        len(df)
+    st.write(
+        "Information about the data currently used by the dashboard."
     )
 
-with data2:
 
-    st.metric(
-        "Feature Columns",
-        len(df.columns)
+    data1, data2, data3 = (
+        st.columns(3)
     )
 
-with data3:
 
-    st.metric(
-        "Latest Data Time",
-        latest_time.strftime(
-            "%Y-%m-%d %H:%M"
+    with data1:
+
+        st.metric(
+            "Available Records",
+            len(df)
         )
-    )
+
+
+    with data2:
+
+        st.metric(
+            "Feature Columns",
+            len(df.columns)
+        )
+
+
+    with data3:
+
+        st.metric(
+            "Latest Data Time",
+            latest_time.strftime(
+                "%Y-%m-%d %H:%M"
+            )
+        )
 
 
 # ==========================================================
-# ABOUT
+# ABOUT THE PROJECT
 # ==========================================================
 
 st.divider()
 
-st.header("ℹ️ About the Project")
 
-st.write(
-    """
-**Pearls AQI Predictor** is an end-to-end machine learning
-system designed to forecast Air Quality Index values for
-the next three days.
+with st.expander(
+    "ℹ️ About the Project",
+    expanded=False
+):
+
+    st.write(
+
+        f"""
+**Pearls AQI Predictor** is an end-to-end machine
+learning system designed to forecast Air Quality Index
+values for the next three days in **{CITY_NAME},
+{COUNTRY_NAME}**.
 
 ### Technologies
 
 - Python
 - Pandas
 - Scikit-learn
-- Random Forest
+- Gradient Boosting
+- SHAP
 - Hopsworks Feature Store
 - GitHub Actions
 - Streamlit
@@ -959,17 +1849,26 @@ the next three days.
 ### Key Features
 
 - Automated feature engineering
+- EPA-style PM2.5 AQI calculation
 - Chronological model evaluation
-- EPA-style PM2.5 AQI target
+- Gradient Boosting model
 - 72-hour AQI forecasting
 - Recursive future prediction
 - Model comparison
-- Feature importance analysis
+- SHAP feature importance
+- Individual prediction explanation
 - AQI health alerts
 - Interactive Streamlit dashboard
 """
-)
+    )
 
-st.success(
-    "🎉 Pearls AQI Predictor Dashboard Loaded Successfully!"
+
+# ==========================================================
+# FOOTER
+# ==========================================================
+
+st.divider()
+
+st.caption(
+    "Pearls AQI Predictor · 10Pearls SHINE Internship · Data Sciences Track"
 )
