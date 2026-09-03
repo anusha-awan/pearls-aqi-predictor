@@ -2,8 +2,11 @@ import streamlit as st
 import pandas as pd
 import joblib
 import matplotlib.pyplot as plt
+import os
+import requests
 
 from datetime import timedelta
+from dotenv import load_dotenv
 
 
 # ==========================================================
@@ -26,6 +29,13 @@ CITY_NAME = "Lahore"
 COUNTRY_NAME = "Pakistan"
 
 FORECAST_HOURS = 72
+
+LATITUDE = 31.5204
+LONGITUDE = 74.3587
+
+OPENWEATHER_API_URL = (
+    "https://api.openweathermap.org/data/2.5/air_pollution"
+)
 
 MODEL_FEATURES = [
     "co",
@@ -133,25 +143,15 @@ def calculate_pm25_aqi(pm25):
     if pm25 < 0:
         return None
 
-    # EPA PM2.5 concentration is truncated
-    # to one decimal place before AQI calculation.
-
     pm25 = int(pm25 * 10) / 10
 
     breakpoints = [
-
         (0.0, 9.0, 0, 50),
-
         (9.1, 35.4, 51, 100),
-
         (35.5, 55.4, 101, 150),
-
         (55.5, 125.4, 151, 200),
-
         (125.5, 225.4, 201, 300),
-
         (225.5, 325.4, 301, 500)
-
     ]
 
     if pm25 > 325.4:
@@ -171,7 +171,6 @@ def calculate_pm25_aqi(pm25):
         ):
 
             aqi = (
-
                 (
                     aqi_high - aqi_low
                 )
@@ -180,12 +179,9 @@ def calculate_pm25_aqi(pm25):
                     concentration_high
                     - concentration_low
                 )
-
             ) * (
-
                 pm25
                 - concentration_low
-
             ) + aqi_low
 
             return int(round(aqi))
@@ -266,29 +262,146 @@ def load_data():
     )
 
     df = (
-
         df
-
         .dropna(
             subset=["datetime"]
         )
-
         .sort_values(
             "datetime"
         )
-
         .drop_duplicates(
             subset=["datetime"],
             keep="last"
         )
-
         .reset_index(
             drop=True
         )
-
     )
 
     return df
+
+
+# ==========================================================
+# FETCH LIVE AIR QUALITY FROM OPENWEATHER
+# ==========================================================
+
+@st.cache_data(ttl=300)
+def fetch_live_air_quality():
+
+    # Load local .env if available.
+    # This is used during local development.
+
+    load_dotenv()
+
+    api_key = None
+
+    # ------------------------------------------------------
+    # Streamlit Cloud Secrets
+    # ------------------------------------------------------
+
+    try:
+
+        api_key = st.secrets[
+            "OPENWEATHER_API_KEY"
+        ]
+
+    except Exception:
+
+        api_key = None
+
+    # ------------------------------------------------------
+    # Local .env fallback
+    # ------------------------------------------------------
+
+    if not api_key:
+
+        api_key = os.getenv(
+            "OPENWEATHER_API_KEY"
+        )
+
+    if not api_key:
+
+        raise ValueError(
+            "OPENWEATHER_API_KEY is not configured."
+        )
+
+    # ------------------------------------------------------
+    # API request
+    # ------------------------------------------------------
+
+    params = {
+
+        "lat":
+            LATITUDE,
+
+        "lon":
+            LONGITUDE,
+
+        "appid":
+            api_key
+
+    }
+
+    response = requests.get(
+        OPENWEATHER_API_URL,
+        params=params,
+        timeout=30
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    pollution = data["list"][0]
+
+    # ------------------------------------------------------
+    # Timestamp
+    # ------------------------------------------------------
+
+    timestamp = pd.to_datetime(
+        pollution["dt"],
+        unit="s",
+        utc=True
+    )
+
+    components = pollution[
+        "components"
+    ]
+
+    # ------------------------------------------------------
+    # Return live pollutant values
+    # ------------------------------------------------------
+
+    return {
+
+        "datetime":
+            timestamp,
+
+        "co":
+            components["co"],
+
+        "no":
+            components["no"],
+
+        "no2":
+            components["no2"],
+
+        "o3":
+            components["o3"],
+
+        "so2":
+            components["so2"],
+
+        "pm2_5":
+            components["pm2_5"],
+
+        "pm10":
+            components["pm10"],
+
+        "nh3":
+            components["nh3"]
+
+    }
 
 
 # ==========================================================
@@ -401,33 +514,25 @@ if actual_features is not None:
     if actual_features != expected_features:
 
         st.error(
-
             f"Model expects {actual_features} features, "
             f"but the dashboard provides "
             f"{expected_features} features."
-
         )
 
         st.stop()
 
 
 missing_features = [
-
     feature
-
     for feature in MODEL_FEATURES
-
     if feature not in df.columns
-
 ]
 
 if missing_features:
 
     st.error(
-
         "Missing model features:\n"
         + "\n".join(missing_features)
-
     )
 
     st.stop()
@@ -455,15 +560,63 @@ df["day_of_week"] = (
 
 
 # ==========================================================
-# CURRENT OBSERVATION
+# CURRENT OBSERVATION — LIVE API
 # ==========================================================
 
-latest = df.iloc[-1].copy()
+try:
 
-latest_time = latest["datetime"]
+    live_data = fetch_live_air_quality()
+
+    st.caption(
+        "🟢 Live air-quality data from OpenWeather API · "
+        "Data refreshes every 5 minutes."
+    )
+
+except Exception:
+
+    st.warning(
+        "⚠️ Live OpenWeather data is temporarily unavailable. "
+        "Using the latest stored observation instead."
+    )
+
+    latest_stored = df.iloc[-1].copy()
+
+    live_data = {
+
+        "datetime":
+            latest_stored["datetime"],
+
+        "co":
+            latest_stored["co"],
+
+        "no":
+            latest_stored["no"],
+
+        "no2":
+            latest_stored["no2"],
+
+        "o3":
+            latest_stored["o3"],
+
+        "so2":
+            latest_stored["so2"],
+
+        "pm2_5":
+            latest_stored["pm2_5"],
+
+        "pm10":
+            latest_stored["pm10"],
+
+        "nh3":
+            latest_stored["nh3"]
+
+    }
+
+
+latest_time = live_data["datetime"]
 
 current_pm25 = float(
-    latest["pm2_5"]
+    live_data["pm2_5"]
 )
 
 current_aqi = calculate_pm25_aqi(
@@ -586,7 +739,7 @@ if len(historical_aqi) == 0:
 
 
 # Synchronize latest historical AQI
-# with current EPA AQI.
+# with current live EPA AQI.
 
 historical_aqi[-1] = float(
     current_aqi
@@ -753,37 +906,38 @@ for step in range(
     # ------------------------------------------------------
     # FUTURE POLLUTANT BASELINE
     # ------------------------------------------------------
+    # Use LIVE OpenWeather values.
 
     future_co = float(
-        latest["co"]
+        live_data["co"]
     )
 
     future_no = float(
-        latest["no"]
+        live_data["no"]
     )
 
     future_no2 = float(
-        latest["no2"]
+        live_data["no2"]
     )
 
     future_o3 = float(
-        latest["o3"]
+        live_data["o3"]
     )
 
     future_so2 = float(
-        latest["so2"]
+        live_data["so2"]
     )
 
     future_pm25 = float(
-        latest["pm2_5"]
+        live_data["pm2_5"]
     )
 
     future_pm10 = float(
-        latest["pm10"]
+        live_data["pm10"]
     )
 
     future_nh3 = float(
-        latest["nh3"]
+        live_data["nh3"]
     )
 
 
@@ -1292,7 +1446,6 @@ with st.expander(
 
         import shap
 
-
         X_shap = (
 
             df[
@@ -1377,10 +1530,6 @@ with st.expander(
             )
 
 
-            # --------------------------------------------------
-            # GLOBAL SHAP IMPORTANCE
-            # --------------------------------------------------
-
             mean_abs_shap = (
 
                 abs(
@@ -1448,10 +1597,6 @@ with st.expander(
             )
 
 
-            # --------------------------------------------------
-            # TOP SHAP CHART
-            # --------------------------------------------------
-
             top_shap = (
 
                 shap_importance
@@ -1513,10 +1658,6 @@ with st.expander(
                 fig_shap
             )
 
-
-            # --------------------------------------------------
-            # LOCAL EXPLANATION
-            # --------------------------------------------------
 
             st.subheader(
                 "🔍 Individual Prediction Explanation"
@@ -1665,10 +1806,6 @@ with st.expander(
             )
 
 
-            # --------------------------------------------------
-            # STRONGEST FEATURE
-            # --------------------------------------------------
-
             strongest_feature = (
 
                 shap_importance.iloc[0][
@@ -1705,7 +1842,7 @@ with st.expander(
             )
 
 
-    except Exception as e:
+    except Exception:
 
         st.warning(
             "SHAP explainability could not be generated. "
@@ -1842,12 +1979,14 @@ values for the next three days in **{CITY_NAME},
 - Scikit-learn
 - Gradient Boosting
 - SHAP
+- OpenWeather Air Pollution API
 - Hopsworks Feature Store
 - GitHub Actions
 - Streamlit
 
 ### Key Features
 
+- Live OpenWeather air-quality data
 - Automated feature engineering
 - EPA-style PM2.5 AQI calculation
 - Chronological model evaluation
