@@ -109,20 +109,15 @@ with st.sidebar:
 
     st.subheader("📚 Documentation")
 
-    st.markdown(
-        "[GitHub Repository]"
-        "(https://github.com/anusha-awan/pearls-aqi-predictor)"
-    )
+st.markdown(
+    "[GitHub Repository]"
+    "(https://github.com/anusha-awan/pearls-aqi-predictor)"
+)
 
-    st.markdown(
-        "[Final Report]"
-        "(https://github.com/anusha-awan/pearls-aqi-predictor/blob/main/Final_Report.md)"
-    )
-
-    st.markdown(
-        "[Build Journey & EDA]"
-        "(https://github.com/anusha-awan/pearls-aqi-predictor/blob/main/EDA_Writeup.md)"
-    )
+st.markdown(
+    "[Final Report]"
+    "(https://github.com/anusha-awan/pearls-aqi-predictor/blob/main/PROJECT_REPORT.md)"
+)
 
 
 # ==========================================================
