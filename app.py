@@ -109,12 +109,12 @@ with st.sidebar:
 
     st.subheader("📚 Documentation")
 
-st.markdown(
+    st.markdown(
     "[GitHub Repository]"
     "(https://github.com/anusha-awan/pearls-aqi-predictor)"
 )
 
-st.markdown(
+    st.markdown(
     "[Final Report]"
     "(https://github.com/anusha-awan/pearls-aqi-predictor/blob/main/PROJECT_REPORT.md)"
 )
