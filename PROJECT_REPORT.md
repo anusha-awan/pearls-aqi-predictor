@@ -862,7 +862,6 @@ Instead of claiming success, the project continued using the validated local pip
 
 The final working flow is:
 
-```text
 OpenWeather API
        ↓
 Live Air Quality Data
@@ -883,174 +882,167 @@ Streamlit Dashboard
        ↓
 Online Deployment
 
+---
 
-## 40. Current System Flow
-
-The final working flow of the project is:
-
-```text
-OpenWeather API
-       ↓
-Live Air Quality Data
-       ↓
-Python Data Processing
-       ↓
-Feature Engineering
-       ↓
-AQI Calculation
-       ↓
-Gradient Boosting Model
-       ↓
-72-Hour Recursive Forecast
-       ↓
-SHAP Explainability
-       ↓
-Streamlit Dashboard
-       ↓
-Online Deployment
-41. What Is Fully Working
+## 41. What Is Fully Working
 
 The following parts are working in the final project:
 
-Python environment
-OpenWeather API integration
-Live air-quality data collection
-Historical data handling
-Data cleaning
-Feature engineering
-PM2.5-based AQI calculation
-Machine learning model training
-Model comparison
-Gradient Boosting model
-72-hour AQI prediction
-SHAP explainability
-Streamlit dashboard
-Live OpenWeather integration
-Streamlit Secrets
-GitHub repository
-GitHub Actions automation
-Online Streamlit deployment
-42. What Has Limitations
+- Python environment
+- OpenWeather API integration
+- Live air-quality data collection
+- Historical data handling
+- Data cleaning
+- Feature engineering
+- PM2.5-based AQI calculation
+- Machine learning model training
+- Model comparison
+- Gradient Boosting model
+- 72-hour AQI prediction
+- SHAP explainability
+- Streamlit dashboard
+- Live OpenWeather integration
+- Streamlit Secrets
+- GitHub repository
+- GitHub Actions automation
+- Online Streamlit deployment
+
+---
+
+## 42. What Has Limitations
 
 Some parts of the original project requirements were not completed exactly as initially planned.
 
-Hopsworks Data Upload
+### Hopsworks Data Upload
 
-Hopsworks was successfully connected and the aqi_features_v2 Feature Store was created. However, the final data upload failed because of a storage-layer error:
+Hopsworks was successfully connected and the `aqi_features_v2` Feature Store was created. However, the final data upload failed because of a storage-layer error:
 
-Generic HdfsObjectStore error – RPC listener disconnected
+`Generic HdfsObjectStore error – RPC listener disconnected`
 
 The dataset was verified locally before continuing. It contained 8,401 valid rows and 28 features, with no missing feature values and no duplicate datetime values.
 
 Because the problem occurred at the Hopsworks storage layer rather than during data preparation, the validated local dataset was used for the remaining development.
 
-Flask/FastAPI
+### Flask/FastAPI
 
 A separate Flask/FastAPI backend was not implemented in the final version.
 
 Streamlit currently works as the application and presentation layer. It loads the trained model, processes the latest air-quality data, generates the 72-hour forecast and displays the results.
 
-TensorFlow
+### TensorFlow
 
 TensorFlow was explored during the project but was not selected as the final production model.
 
-Feature Store Training
+### Feature Store Training
 
-The final production model was trained using the validated local features.csv dataset rather than directly retrieving the training data from Hopsworks.
+The final production model was trained using the validated local `features.csv` dataset rather than directly retrieving the training data from Hopsworks.
 
-43. Model Performance Summary
+---
+
+## 43. Model Performance Summary
 
 Three machine learning models were evaluated during the project:
 
-Random Forest
-Gradient Boosting
-Ridge Regression
+- Random Forest
+- Gradient Boosting
+- Ridge Regression
 
 The final results were:
 
-Model	MAE	RMSE	R²
-Random Forest	3.6747	6.8945	0.9433
-Gradient Boosting	3.5714	6.0362	0.9565
-Ridge Regression	4.9105	7.3455	0.9356
+| Model | MAE | RMSE | R² |
+|---|---:|---:|---:|
+| Random Forest | 3.6747 | 6.8945 | 0.9433 |
+| Gradient Boosting | 3.5714 | 6.0362 | 0.9565 |
+| Ridge Regression | 4.9105 | 7.3455 | 0.9356 |
 
 Gradient Boosting achieved the lowest MAE and RMSE and the highest R² score.
 
 Therefore, Gradient Boosting Regressor was selected as the final production model.
 
-44. Project Strengths
+---
+
+## 44. Project Strengths
 
 The project has several strengths:
 
-Uses real air-quality data from an external API.
-Uses live data instead of relying only on static sample data.
-Performs data cleaning and feature engineering.
-Compares multiple machine learning models.
-Selects the final model based on evaluation metrics.
-Provides a 72-hour AQI forecast.
-Includes SHAP-based model explainability.
-Uses GitHub for version control.
-Uses GitHub Actions for automation.
-Provides an interactive Streamlit dashboard.
-Uses secure API-key handling.
-Is deployed online.
-Has a user-friendly interface.
-Documents technical problems and limitations honestly.
-45. Limitations
+- Uses real air-quality data from an external API.
+- Uses live data instead of relying only on static sample data.
+- Performs data cleaning and feature engineering.
+- Compares multiple machine learning models.
+- Selects the final model based on evaluation metrics.
+- Provides a 72-hour AQI forecast.
+- Includes SHAP-based model explainability.
+- Uses GitHub for version control.
+- Uses GitHub Actions for automation.
+- Provides an interactive Streamlit dashboard.
+- Uses secure API-key handling.
+- Is deployed online.
+- Has a user-friendly interface.
+- Documents technical problems and limitations honestly.
+
+---
+
+## 45. Limitations
 
 The current system has some limitations.
 
-Limited Location
+### Limited Location
 
 The current model and dashboard are designed for Lahore, Pakistan.
 
-API Dependency
+### API Dependency
 
 The live dashboard depends on the availability and response of the OpenWeather API.
 
-Forecast Uncertainty
+### Forecast Uncertainty
 
 Machine learning predictions are estimates. Actual future AQI values can be different because environmental conditions can change unexpectedly.
 
-Hopsworks Storage Issue
+### Hopsworks Storage Issue
 
 The Hopsworks Feature Store was created successfully, but the final data upload could not be completed because of the HDFS RPC listener error.
 
-No Separate REST API
+### No Separate REST API
 
 The final version does not include a separate Flask or FastAPI backend.
 
-Local Training Dataset
+### Local Training Dataset
 
 The final production model uses the validated local dataset instead of directly retrieving the training data from Hopsworks.
 
-Limited Environmental Variables
+### Limited Environmental Variables
 
 The current model mainly uses air-quality measurements and derived time-based features. Additional weather and environmental variables could improve future predictions.
 
-46. Future Improvements
+---
+
+## 46. Future Improvements
 
 The project can be improved in several ways in the future:
 
-Add temperature as a model feature.
-Add humidity.
-Add wind speed and wind direction.
-Add atmospheric pressure.
-Add more historical air-quality data.
-Support multiple cities.
-Add more machine learning and time-series models.
-Add advanced deep-learning forecasting models.
-Add a Flask/FastAPI backend.
-Connect model training directly with the Feature Store.
-Resolve the Hopsworks storage issue.
-Improve model version management.
-Add automatic model retraining.
-Add prediction monitoring.
-Add email or notification alerts.
-Add AQI health recommendations.
-Add uncertainty ranges for predictions.
-Improve mobile responsiveness.
-Add more detailed historical AQI visualizations.
-47. Future Flask/FastAPI Architecture
+- Add temperature as a model feature.
+- Add humidity.
+- Add wind speed and wind direction.
+- Add atmospheric pressure.
+- Add more historical air-quality data.
+- Support multiple cities.
+- Add more machine learning and time-series models.
+- Add advanced deep-learning forecasting models.
+- Add a Flask/FastAPI backend.
+- Connect model training directly with the Feature Store.
+- Resolve the Hopsworks storage issue.
+- Improve model version management.
+- Add automatic model retraining.
+- Add prediction monitoring.
+- Add email or notification alerts.
+- Add AQI health recommendations.
+- Add uncertainty ranges for predictions.
+- Improve mobile responsiveness.
+- Add more detailed historical AQI visualizations.
+
+---
+
+## 47. Future Flask/FastAPI Architecture
 
 If a separate Flask or FastAPI backend is required, it can be added without rebuilding the complete project.
 
@@ -1074,72 +1066,80 @@ In this architecture, the Flask/FastAPI backend would handle the prediction-rela
 
 The existing model, feature engineering and prediction logic can be reused.
 
-48. Security Considerations
+---
+
+## 48. Security Considerations
 
 Security was considered during the development of the project.
 
 The OpenWeather API key was not hard-coded into the public GitHub repository.
 
-During local development, the API key was stored in a .env file.
+During local development, the API key was stored in a `.env` file.
 
 During Streamlit cloud deployment, the API key was stored using Streamlit Secrets.
 
 This approach helps prevent the API key from being exposed in the source code or public repository.
 
-The .env file was also kept outside the public project code.
+The `.env` file was also kept outside the public project code.
 
-49. Final Result
+---
+
+## 49. Final Result
 
 The final project successfully provides an end-to-end AQI prediction application for Lahore.
 
 The system can:
 
-Collect current air-quality data.
-Process the collected data.
-Calculate the current EPA-style AQI from PM2.5.
-Prepare the required model features.
-Load the trained Gradient Boosting model.
-Predict AQI for the next 72 hours.
-Provide model performance information.
-Provide SHAP-based explainability.
-Display current AQI information.
-Display future AQI predictions.
-Display the results through an interactive Streamlit dashboard.
-Run as an online deployed application.
+- Collect current air-quality data.
+- Process the collected data.
+- Calculate the current EPA-style AQI from PM2.5.
+- Prepare the required model features.
+- Load the trained Gradient Boosting model.
+- Predict AQI for the next 72 hours.
+- Provide model performance information.
+- Provide SHAP-based explainability.
+- Display current AQI information.
+- Display future AQI predictions.
+- Display the results through an interactive Streamlit dashboard.
+- Run as an online deployed application.
 
 The project also includes GitHub Actions automation and model-management work through Hopsworks.
 
-50. Lessons Learned
+---
+
+## 50. Lessons Learned
 
 This project helped me understand that developing a data science application is not only about training a machine learning model.
 
 During the project, I learned about:
 
-Working with real-world APIs.
-Handling API errors.
-Protecting API keys.
-Collecting historical data.
-Cleaning datasets.
-Feature engineering.
-Calculating AQI from PM2.5.
-Training machine learning models.
-Comparing different models.
-Evaluating model performance.
-Making future predictions.
-Using SHAP for explainability.
-Exploring Feature Stores.
-Registering models.
-Using GitHub Actions.
-Building dashboards with Streamlit.
-Deploying applications online.
-Debugging deployment problems.
-Handling limitations of cloud services.
+- Working with real-world APIs.
+- Handling API errors.
+- Protecting API keys.
+- Collecting historical data.
+- Cleaning datasets.
+- Feature engineering.
+- Calculating AQI from PM2.5.
+- Training machine learning models.
+- Comparing different models.
+- Evaluating model performance.
+- Making future predictions.
+- Using SHAP for explainability.
+- Exploring Feature Stores.
+- Registering models.
+- Using GitHub Actions.
+- Building dashboards with Streamlit.
+- Deploying applications online.
+- Debugging deployment problems.
+- Handling limitations of cloud services.
 
 One of the most important lessons was that real-world projects can have technical problems even when the code and data are correct.
 
 The Hopsworks storage issue was an example of this. Instead of stopping the project, I verified the dataset, identified where the problem was occurring, documented the limitation and continued development using a working alternative.
 
-51. Conclusion
+---
+
+## 51. Conclusion
 
 Pearls AQI Predictor was developed to predict the AQI of Lahore for the next three days using machine learning.
 
@@ -1153,59 +1153,72 @@ Although some original requirements could not be completed exactly as planned, e
 
 Overall, this project provided practical experience in developing a real-world machine learning application from data collection to deployment.
 
-52. Technologies Used
-Technology	Purpose
-Python	Main programming language
-Pandas	Data processing and manipulation
-NumPy	Numerical operations
-Scikit-learn	Machine learning models
-TensorFlow	Experimental machine learning exploration
-OpenWeather API	Live air-quality data
-Hopsworks	Feature Store and Model Registry exploration
-SHAP	Model explainability
-GitHub Actions	Automation
-Streamlit	Dashboard and application layer
-Git	Version control
-GitHub	Code repository
-Matplotlib	Data visualization
-Joblib	Model saving and loading
-python-dotenv	Local environment variable management
-53. Project Links
-GitHub Repository
+---
+
+## 52. Technologies Used
+
+| Technology | Purpose |
+|---|---|
+| Python | Main programming language |
+| Pandas | Data processing and manipulation |
+| NumPy | Numerical operations |
+| Scikit-learn | Machine learning models |
+| TensorFlow | Experimental machine learning exploration |
+| OpenWeather API | Live air-quality data |
+| Hopsworks | Feature Store and Model Registry exploration |
+| SHAP | Model explainability |
+| GitHub Actions | Automation |
+| Streamlit | Dashboard and application layer |
+| Git | Version control |
+| GitHub | Code repository |
+| Matplotlib | Data visualization |
+| Joblib | Model saving and loading |
+| python-dotenv | Local environment variable management |
+
+---
+
+## 53. Project Links
+
+### GitHub Repository
 
 https://github.com/anusha-awan/pearls-aqi-predictor
 
-Live Streamlit Dashboard
+### Live Streamlit Dashboard
 
 https://pearlsaqi2026.streamlit.app/
 
-54. Final Project Status
+---
 
-Overall Status: Completed working prototype with documented limitations
+## 54. Final Project Status
 
-Working Components
-✅ Python environment
-✅ OpenWeather API
-✅ Live air-quality data collection
-✅ Historical data collection
-✅ Data cleaning
-✅ Feature engineering
-✅ PM2.5-based AQI calculation
-✅ Machine learning model training
-✅ Model comparison
-✅ Gradient Boosting model
-✅ 72-hour recursive forecasting
-✅ SHAP explainability
-✅ Streamlit dashboard
-✅ Live API integration
-✅ Secure API-key handling
-✅ GitHub repository
-✅ GitHub Actions automation
-✅ Streamlit deployment
-Partially Completed / Limited Components
-⚠️ Hopsworks Feature Store data upload
-⚠️ Direct Feature Store-based training
-⚠️ TensorFlow production model
-⚠️ Separate Flask/FastAPI backend
+**Overall Status:** Completed working prototype with documented limitations
+
+### Working Components
+
+- ✅ Python environment
+- ✅ OpenWeather API
+- ✅ Live air-quality data collection
+- ✅ Historical data collection
+- ✅ Data cleaning
+- ✅ Feature engineering
+- ✅ PM2.5-based AQI calculation
+- ✅ Machine learning model training
+- ✅ Model comparison
+- ✅ Gradient Boosting model
+- ✅ 72-hour recursive forecasting
+- ✅ SHAP explainability
+- ✅ Streamlit dashboard
+- ✅ Live API integration
+- ✅ Secure API-key handling
+- ✅ GitHub repository
+- ✅ GitHub Actions automation
+- ✅ Streamlit deployment
+
+### Partially Completed / Limited Components
+
+- ⚠️ Hopsworks Feature Store data upload
+- ⚠️ Direct Feature Store-based training
+- ⚠️ TensorFlow production model
+- ⚠️ Separate Flask/FastAPI backend
 
 The project is therefore presented as a working end-to-end machine learning application with the remaining cloud and backend limitations clearly documented.
