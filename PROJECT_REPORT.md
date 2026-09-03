@@ -2,10 +2,14 @@
 
 ## DATA SCIENCE INTERNSHIP PROJECT REPORT
 
-**Submitted by:** Anusha Awan
+**Submitted by:** Anusha Awan 
+
 **Program:** BS Software Engineering
+
 **Institution:** Government College University, Lahore
+
 **Internship:** 10Pearls SHINE – Data Sciences
+
 **Project Submission:** September 2026
 
 ---
