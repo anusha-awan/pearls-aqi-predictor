@@ -110,14 +110,14 @@ with st.sidebar:
     st.subheader("📚 Documentation")
 
     st.markdown(
-    "[GitHub Repository]"
-    "(https://github.com/anusha-awan/pearls-aqi-predictor)"
-)
+        "[GitHub Repository]"
+        "(https://github.com/anusha-awan/pearls-aqi-predictor)"
+    )
 
     st.markdown(
-    "[Final Report]"
-    "(https://github.com/anusha-awan/pearls-aqi-predictor/blob/main/PROJECT_REPORT.md)"
-)
+        "[Final Report]"
+        "(https://github.com/anusha-awan/pearls-aqi-predictor/blob/main/PROJECT_REPORT.md)"
+    )
 
 
 # ==========================================================
@@ -130,9 +130,11 @@ def calculate_pm25_aqi(pm25):
         return None
 
     try:
+
         pm25 = float(pm25)
 
     except (ValueError, TypeError):
+
         return None
 
     if pm25 < 0:
@@ -283,36 +285,16 @@ def load_data():
 @st.cache_data(ttl=300)
 def fetch_live_air_quality():
 
-    # Load local .env if available.
-    # This is used during local development.
-
+    # Load local .env file.
     load_dotenv()
 
-    api_key = None
-
     # ------------------------------------------------------
-    # Streamlit Cloud Secrets
+    # API key
     # ------------------------------------------------------
 
-    try:
-
-        api_key = st.secrets[
-            "OPENWEATHER_API_KEY"
-        ]
-
-    except Exception:
-
-        api_key = None
-
-    # ------------------------------------------------------
-    # Local .env fallback
-    # ------------------------------------------------------
-
-    if not api_key:
-
-        api_key = os.getenv(
-            "OPENWEATHER_API_KEY"
-        )
+    api_key = os.getenv(
+        "OPENWEATHER_API_KEY"
+    )
 
     if not api_key:
 
@@ -742,10 +724,89 @@ historical_aqi[-1] = float(
 
 
 # ==========================================================
+# HISTORICAL POLLUTANT PROFILES
+# ==========================================================
+
+pollutant_columns = [
+    "co",
+    "no",
+    "no2",
+    "o3",
+    "so2",
+    "pm2_5",
+    "pm10",
+    "nh3"
+]
+
+
+# Ensure pollutant columns are numeric
+# before calculating historical profiles.
+
+for pollutant in pollutant_columns:
+
+    df[pollutant] = pd.to_numeric(
+        df[pollutant],
+        errors="coerce"
+    )
+
+
+# ----------------------------------------------------------
+# Seasonal profile:
+# Median pollutant value for each combination of
+# day of week + hour.
+# ----------------------------------------------------------
+
+seasonal_profile = (
+
+    df
+
+    .groupby(
+        [
+            "day_of_week",
+            "hour"
+        ]
+    )[pollutant_columns]
+
+    .median()
+
+)
+
+
+# ----------------------------------------------------------
+# Hourly fallback profile:
+# Median pollutant value for each hour of the day.
+# ----------------------------------------------------------
+
+hourly_profile = (
+
+    df
+
+    .groupby(
+        "hour"
+    )[pollutant_columns]
+
+    .median()
+
+)
+
+
+# ==========================================================
 # FORECAST
 # ==========================================================
 
 predictions = []
+
+
+# Previous pollutant values are used for the
+# one-hour pollutant lag features.
+
+previous_pm25 = float(
+    live_data["pm2_5"]
+)
+
+previous_pm10 = float(
+    live_data["pm10"]
+)
 
 
 for step in range(
@@ -898,41 +959,143 @@ for step in range(
     )
 
 
-    # ------------------------------------------------------
-    # FUTURE POLLUTANT BASELINE
-    # ------------------------------------------------------
-    # Use LIVE OpenWeather values.
+    # ======================================================
+    # FUTURE POLLUTANT ESTIMATION
+    # ======================================================
+
+    future_day_of_week = (
+        future_time.dayofweek
+    )
+
+    future_hour = (
+        future_time.hour
+    )
+
+
+    if (
+        future_day_of_week,
+        future_hour
+    ) in seasonal_profile.index:
+
+        seasonal_values = (
+            seasonal_profile.loc[
+                (
+                    future_day_of_week,
+                    future_hour
+                )
+            ]
+        )
+
+    else:
+
+        seasonal_values = None
+
+
+    if future_hour in hourly_profile.index:
+
+        hourly_values = (
+            hourly_profile.loc[
+                future_hour
+            ]
+        )
+
+    else:
+
+        hourly_values = None
+
+
+    future_pollutants = {}
+
+
+    for pollutant in pollutant_columns:
+
+        live_value = float(
+            live_data[pollutant]
+        )
+
+        future_value = None
+
+
+        # --------------------------------------------------
+        # First choice: day-of-week + hour profile
+        # --------------------------------------------------
+
+        if seasonal_values is not None:
+
+            candidate = seasonal_values[
+                pollutant
+            ]
+
+            if pd.notna(candidate):
+
+                future_value = float(
+                    candidate
+                )
+
+
+        # --------------------------------------------------
+        # Second choice: hour-of-day profile
+        # --------------------------------------------------
+
+        if future_value is None:
+
+            if hourly_values is not None:
+
+                candidate = hourly_values[
+                    pollutant
+                ]
+
+                if pd.notna(candidate):
+
+                    future_value = float(
+                        candidate
+                    )
+
+
+        # --------------------------------------------------
+        # Final choice: current live value
+        # --------------------------------------------------
+
+        if future_value is None:
+
+            future_value = live_value
+
+
+        future_pollutants[
+            pollutant
+        ] = future_value
+
 
     future_co = float(
-        live_data["co"]
+        future_pollutants["co"]
     )
 
     future_no = float(
-        live_data["no"]
+        future_pollutants["no"]
     )
 
     future_no2 = float(
-        live_data["no2"]
+        future_pollutants["no2"]
     )
 
     future_o3 = float(
-        live_data["o3"]
+        future_pollutants["o3"]
     )
 
     future_so2 = float(
-        live_data["so2"]
+        future_pollutants["so2"]
     )
 
     future_pm25 = float(
-        live_data["pm2_5"]
+        future_pollutants["pm2_5"]
     )
 
     future_pm10 = float(
-        live_data["pm10"]
+        future_pollutants["pm10"]
     )
 
     future_nh3 = float(
-        live_data["nh3"]
+        future_pollutants["nh3"]
     )
 
 
@@ -1003,10 +1166,10 @@ for step in range(
             aqi_lag_72,
 
         "pm2_5_lag_1":
-            future_pm25,
+            previous_pm25,
 
         "pm10_lag_1":
-            future_pm10,
+            previous_pm10,
 
         "aqi_rolling_6":
             aqi_rolling_6,
@@ -1062,6 +1225,15 @@ for step in range(
 
     historical_aqi.append(
         predicted_aqi
+    )
+
+
+    previous_pm25 = (
+        future_pm25
+    )
+
+    previous_pm10 = (
+        future_pm10
     )
 
 
@@ -1975,7 +2147,7 @@ values for the next three days in **{CITY_NAME},
 - Gradient Boosting
 - SHAP
 - OpenWeather Air Pollution API
-- Hopsworks Feature Store
+- Hopsworks Feature Store (integrated during development)
 - GitHub Actions
 - Streamlit
 
@@ -2006,3 +2178,4 @@ st.divider()
 st.caption(
     "Pearls AQI Predictor · 10Pearls SHINE Internship · Data Sciences Track"
 )
+
