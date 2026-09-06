@@ -2,69 +2,64 @@
 
 ## 3-Day Air Quality Index Forecast
 
-Pearls AQI Predictor is an end-to-end machine learning system that predicts the Air Quality Index (AQI) for the next 3 days using air-quality data and machine learning.
+**Pearls AQI Predictor** is an end-to-end machine learning system that predicts the Air Quality Index (AQI) for the next 3 days using real-time air-quality data, historical data, feature engineering, machine learning, explainable AI, automation, and an interactive Streamlit dashboard.
 
-The project uses real-time air-quality data, historical data collection, feature engineering, machine-learning model training, model evaluation, Hopsworks Feature Store and Model Registry exploration, GitHub Actions automation, SHAP explainability, and an interactive Streamlit dashboard.
+The project was developed as part of the **10Pearls SHINE – Data Sciences Internship**.
 
-The final production prediction pipeline uses a validated local dataset and a **Gradient Boosting Regressor**. Hopsworks was successfully connected and its Feature Store was created, but the final Feature Store data upload encountered a storage-layer error, so the validated local dataset was used for final training and prediction.
+The final production pipeline uses a validated local dataset and a **Gradient Boosting Regressor** for 72-hour recursive AQI forecasting.
 
 ---
 
 ## 🎯 Project Objective
 
-The objective of this project is to build an automated system that:
+The objective of this project is to build an automated AQI prediction system that:
 
-* Collects air-quality data from an external API
-* Generates useful time-based and historical features
-* Prepares historical data for machine learning
-* Experiments with Hopsworks Feature Store
-* Uses historical data to train machine-learning models
-* Evaluates multiple regression models
-* Selects the best-performing model
+* Collects real-time air-quality data
+* Stores and processes historical observations
+* Performs feature engineering
+* Trains and compares multiple machine-learning models
+* Selects the best-performing regression model
 * Forecasts AQI for the next 72 hours
-* Provides model explainability using SHAP
-* Generates AQI health alerts
+* Provides SHAP-based model explainability
+* Generates AQI health categories and alerts
 * Displays current and predicted AQI through an interactive dashboard
-* Automates project tasks using GitHub Actions
+* Automates project workflows using GitHub Actions
+* Explores Hopsworks Feature Store and Model Registry
 * Deploys the dashboard online
 
 ---
 
 ## 🏗️ System Architecture
 
-The final working application flow is:
-
 ```text
-OpenWeather API
-       ↓
-Live Air Quality Data
-       ↓
-Python Data Processing
-       ↓
-Feature Engineering
-       ↓
-AQI Calculation
-       ↓
-Gradient Boosting Model
-       ↓
-72-Hour Recursive Forecast
-       ↓
-SHAP Explainability
-       ↓
-Streamlit Dashboard
-       ↓
-Online Deployment
+OpenWeather Air Pollution API
+              ↓
+      Live Air Quality Data
+              ↓
+       Data Processing
+              ↓
+      Feature Engineering
+              ↓
+         AQI Calculation
+              ↓
+    Gradient Boosting Model
+              ↓
+    72-Hour Recursive Forecast
+              ↓
+      SHAP Explainability
+              ↓
+       Streamlit Dashboard
+              ↓
+       Online Deployment
 ```
 
-Hopsworks was also explored for Feature Store and Model Registry functionality.
-
-GitHub Actions was used for project automation.
+Hopsworks was also explored for Feature Store and Model Registry functionality, while GitHub Actions was used for project automation.
 
 ---
 
 ## 📊 Data & Feature Engineering
 
-The project collects pollutant and air-quality information and generates additional features for machine-learning prediction.
+The project uses air-quality and pollutant information to build machine-learning features.
 
 ### Input Pollutants
 
@@ -79,7 +74,7 @@ The project collects pollutant and air-quality information and generates additio
 
 ### Engineered Features
 
-The project includes:
+The feature-engineering pipeline includes:
 
 * Hour
 * Day
@@ -91,15 +86,15 @@ The project includes:
 * Rolling AQI statistics
 * AQI change rate
 
-The final production model uses **26 model input features**.
+The final production model uses **26 input features**.
 
-The validated local dataset contained **8,401 valid rows and 28 total columns**, with 26 columns/features used as production model inputs.
+The validated local dataset contains **8,401 valid rows and 28 total columns**, with 26 columns used as model inputs.
 
 ---
 
 ## 🤖 Machine Learning
 
-Multiple regression models were trained and compared:
+Three regression models were trained and compared:
 
 1. Ridge Regression
 2. Random Forest
@@ -111,19 +106,15 @@ The models were evaluated using:
 * RMSE
 * R²
 
-A chronological 80/20 train-test split was used to respect the time-series nature of the data.
+A chronological **80/20 train-test split** was used to respect the time-series nature of the data.
 
-### Best Model
+### 🏆 Best Model
 
-**Gradient Boosting Regressor**
-
-Gradient Boosting achieved the best overall evaluation results among the tested models and was selected as the final production model.
+**Gradient Boosting Regressor** was selected as the final production model because it achieved the best overall evaluation results.
 
 ---
 
 ## 📈 Model Performance
-
-The model evaluation results were:
 
 | Model                 |        MAE |       RMSE |         R² |
 | --------------------- | ---------: | ---------: | ---------: |
@@ -133,9 +124,9 @@ The model evaluation results were:
 
 Gradient Boosting achieved:
 
-* Lowest MAE
-* Lowest RMSE
-* Highest R²
+* **Lowest MAE:** 3.5714
+* **Lowest RMSE:** 6.0362
+* **Highest R²:** 0.9565
 
 Therefore, **Gradient Boosting Regressor** was selected as the final production model.
 
@@ -143,9 +134,9 @@ Therefore, **Gradient Boosting Regressor** was selected as the final production 
 
 ## 🔮 72-Hour Forecast
 
-The system generates hourly AQI predictions for the next 72 hours.
+The system generates hourly AQI predictions for the next **72 hours**.
 
-The prediction process uses recursive forecasting, where predicted future values can become part of the input for later predictions.
+The final forecasting pipeline uses **recursive forecasting**, allowing predicted future values to become inputs for subsequent predictions.
 
 The dashboard provides:
 
@@ -161,31 +152,35 @@ The dashboard provides:
 
 ## 🧠 Model Explainability
 
-SHAP (SHapley Additive exPlanations) is used to explain the model's predictions.
+SHAP (**SHapley Additive exPlanations**) is used to explain the model's predictions.
 
-The dashboard provides:
+The project provides:
 
 * Global feature importance
-* Individual prediction explanation
 * Feature contribution information
+* Individual prediction explanations
 
-This helps identify which variables have greater influence on AQI predictions.
+### SHAP Feature Importance
+
+![SHAP Feature Importance](shap_feature_importance.png)
+
+*SHAP feature importance for the trained Gradient Boosting model.*
 
 ---
 
 ## 🚨 AQI Health Alerts
 
-The dashboard categorizes AQI levels and displays health-related alerts when AQI reaches higher-risk categories.
+The dashboard categorizes AQI values and displays health-related alerts for higher-risk AQI levels.
 
-This makes the system more useful for end users instead of displaying only numerical predictions.
+This allows users to understand the potential health implications of predicted air quality instead of viewing only numerical predictions.
 
 ---
 
 ## ⚙️ Automation with GitHub Actions
 
-GitHub Actions was used to automate project tasks.
+GitHub Actions was used to automate project workflows.
 
-The project includes workflow files for feature processing and model-training operations.
+The project includes automated workflows for:
 
 ### Feature Pipeline
 
@@ -194,7 +189,7 @@ The feature pipeline is designed to:
 1. Fetch AQI data
 2. Perform feature engineering
 3. Process the resulting data
-4. Attempt cloud feature storage operations
+4. Attempt cloud feature-storage operations
 
 ### Daily Training Pipeline
 
@@ -204,28 +199,48 @@ The training workflow is designed to:
 2. Train and evaluate multiple models
 3. Select the best-performing model
 4. Save the trained model
-5. Support model management operations
+5. Support model-management operations
 
-### Important Hopsworks Limitation
+### Workflow Status
 
-Hopsworks Feature Store was successfully connected and the `aqi_features_v2` Feature Store was created.
+The automated workflows were successfully executed through GitHub Actions during development.
 
-However, the final data upload encountered the following storage-layer error:
+![GitHub Actions](github_actions.png)
+
+*GitHub Actions showing successful automated AQI pipeline runs.*
+
+---
+
+## ⚠️ Important Hopsworks Limitation
+
+Hopsworks was successfully connected and the `aqi_features_v2` Feature Store was created.
+
+However, the final Feature Store data upload encountered the following storage-layer error:
 
 ```text
 Generic HdfsObjectStore error – RPC listener disconnected
 ```
 
-The dataset was validated locally before continuing. Because the issue occurred during the Hopsworks storage operation, the validated local dataset was used for the remaining model-development pipeline.
+Because the dataset had already been validated locally, the validated local dataset was used for the remaining model-development and prediction pipeline.
+
+This limitation did not prevent the final AQI prediction application from being completed and deployed.
 
 ---
 
 ## 🖥️ Streamlit Dashboard
 
-The interactive Streamlit dashboard displays:
+The final application is deployed as an interactive Streamlit dashboard.
+
+### Final Dashboard
+
+![Pearls AQI Predictor Dashboard](dashboard.png)
+
+*Final Pearls AQI Predictor dashboard showing live AQI and 3-day forecast.*
+
+The dashboard displays:
 
 * Current AQI
-* PM2.5
+* PM2.5 concentration
 * AQI category
 * 72-hour forecast
 * Daily forecast summary
@@ -242,7 +257,7 @@ The interactive Streamlit dashboard displays:
 
 ## 🌐 Live OpenWeather Integration
 
-The final dashboard connects directly to the live OpenWeather Air Pollution API.
+The final dashboard connects to the **OpenWeather Air Pollution API**.
 
 The application:
 
@@ -254,15 +269,13 @@ The application:
 
 If the live API request fails, the application can fall back to the latest stored observation.
 
-The dashboard is configured to refresh periodically so that updated air-quality information can be displayed.
-
 ---
 
 ## 🧮 AQI Calculation
 
-OpenWeather provides an AQI value on a scale from **1 to 5**.
+OpenWeather provides an AQI value on a scale of **1–5**.
 
-This value is not the same as the commonly used EPA AQI scale of 0–500.
+This is different from the commonly used EPA AQI scale of **0–500**.
 
 Therefore, the project does not directly use the OpenWeather 1–5 value as the displayed AQI.
 
@@ -276,9 +289,9 @@ Instead, the dashboard calculates an **EPA-style AQI from PM2.5 concentration** 
 * Pandas
 * NumPy
 * Scikit-learn
+* Ridge Regression
 * Random Forest
 * Gradient Boosting
-* Ridge Regression
 * SHAP
 * Hopsworks Feature Store
 * Hopsworks Model Registry
@@ -385,7 +398,7 @@ OPENWEATHER_API_KEY=your_api_key
 HOPSWORKS_API_KEY=your_api_key
 ```
 
-Do not commit `.env` or API keys to GitHub.
+**Never commit `.env` files or API keys to GitHub.**
 
 ### 6. Run the Dashboard
 
@@ -435,7 +448,7 @@ The final production model was therefore trained using the local `features.csv` 
 
 ## 🧪 Model Registry
 
-Hopsworks Model Registry functionality was also explored.
+Hopsworks Model Registry functionality was explored during development.
 
 Model entries included:
 
@@ -451,7 +464,7 @@ Some model versions differed during development, so registry/version information
 
 ## 📌 Project Deliverables
 
-The completed project provides:
+The project provides:
 
 * End-to-end AQI prediction application
 * Real-time air-quality API integration
@@ -474,8 +487,6 @@ The completed project provides:
 
 ## ⚠️ Current Limitations
 
-The current project has several documented limitations:
-
 ### Hopsworks Data Upload
 
 The Hopsworks Feature Store was created successfully, but the final data upload failed because of a storage-layer RPC error.
@@ -496,7 +507,7 @@ TensorFlow was explored but was not selected as the final production framework.
 
 ### Location
 
-The current model is designed for Lahore, Pakistan.
+The current model is designed for **Lahore, Pakistan**.
 
 ### API Dependency
 
@@ -504,7 +515,7 @@ The live dashboard depends on the availability of the OpenWeather API.
 
 ### Forecast Uncertainty
 
-Predicted AQI values are estimates and actual future air quality can differ because environmental conditions can change unexpectedly.
+Predicted AQI values are estimates, and actual future air quality can differ because environmental conditions can change unexpectedly.
 
 ---
 
