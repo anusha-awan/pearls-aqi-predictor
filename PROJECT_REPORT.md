@@ -732,7 +732,7 @@ The main design choices were:
 
 The purpose was to create a simple and distinctive interface.
 
-The theme was configured through Streamlit's theme settings instead of using unnecessary custom CSS.
+The visual design of the project was customized according to my own design choices. I personally selected the cream and brown color palette and decided the layout, typography, spacing, and overall visual presentation according to my preferred aesthetic. These UI and design decisions were independently chosen and implemented by me to create a clean, distinctive, and user-friendly interface.
 
 ---
 
