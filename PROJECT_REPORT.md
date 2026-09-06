@@ -1001,6 +1001,7 @@ SHAP Explainability
 Streamlit Dashboard
        ↓
 Online Deployment
+```
 
 The Hopsworks Feature Store and Model Registry were explored during development, but the final production training dataset remained local because of the Hopsworks storage limitation.
 
@@ -1190,10 +1191,13 @@ ML Model
 AQI Prediction
        ↓
 Streamlit Dashboard
+```
 
 The backend could handle prediction requests while Streamlit focuses mainly on the user interface.
 
 The existing model and prediction logic can be reused.
+
+---
 
 ## 48. Security Considerations
 
